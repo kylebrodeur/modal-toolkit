@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Modal Toolkit Fleet Dashboard</title>
+  <style>
+    :root{color-scheme:dark;--bg:#101218;--panel:#171b24;--line:#303746;--muted:#9aa4b8;--good:#6ee7a8;--warn:#f7c873;--bad:#ff8d8d;--accent:#6ea8ff}
+    *{box-sizing:border-box}body{font:14px system-ui,sans-serif;max-width:1280px;margin:2rem auto;padding:0 1rem;background:var(--bg);color:#edf0f7}
+    h1{margin:0 0 .35rem;font-size:2rem}.subtle,small{color:var(--muted)}button{font:inherit;color:inherit;background:#252c3b;border:1px solid #46516a;border-radius:6px;padding:.45rem .7rem;cursor:pointer}
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.5rem}.pill{border-radius:999px;padding:.25rem .6rem;font-size:.8rem}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+    section{margin:1.4rem 0}h2{font-size:.95rem;margin:0 0 .7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem}
+    article,.panel{padding:1rem;border:1px solid var(--line);border-radius:10px;background:var(--panel)}article small{display:block}.value{font-size:1.35rem;margin-top:.35rem;overflow-wrap:anywhere}.mini{margin:.35rem 0 0;font-size:.75rem;color:var(--muted)}
+    .card header{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem}.card h3{margin:0;font-size:1rem}.card-down{opacity:.75}
+    .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.65rem}.meta div{padding:.6rem .7rem;background:#1d2330;border-radius:6px;min-width:0}.meta b{display:block;font-weight:500;color:var(--muted);font-size:.78rem;margin-bottom:.2rem}.meta span{overflow-wrap:anywhere}
+    .error{color:var(--bad);padding:.8rem;border:1px solid #713b46;border-radius:8px;background:#27191f}
+    .disabled{color:var(--warn);padding:.9rem 1rem;border:1px solid #7a5c26;border-radius:10px;background:#241d10;margin-bottom:1rem}
+    .disabled p{margin:.35rem 0 0;font-size:.9rem}
+    .skel{min-height:80px}
+    .mini-btn{font-size:.72rem;padding:.2rem .5rem;margin-left:.5rem}
+    button:disabled{opacity:.4;cursor:default}
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/_toolkit/assets/dashboard.js"></script>
+</body>
+</html>
