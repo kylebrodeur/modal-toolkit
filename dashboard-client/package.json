@@ -1,0 +1,22 @@
+{
+  "name": "fleet-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Arrow.js UI for the modal-toolkit fleet dashboard. Builds a single bundled IIFE served by the FastAPI bridge.",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc --noEmit",
+    "mock": "node mock-server.mjs",
+    "capture": "node capture.mjs",
+    "doctor-twin": "node doctor-twin.mjs"
+  },
+  "dependencies": {
+    "@arrow-js/core": "^1.0.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.9.3"
+  }
+}
