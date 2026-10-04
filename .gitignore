@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+# Node dependencies are installed from package-lock.json, never committed.
+node_modules/
