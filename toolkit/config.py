@@ -1,0 +1,147 @@
+"""Shared config for the Modal Toolkit.
+
+One config file, four per-package sections. Layout:
+
+    {
+      "embedding": {"base_url": "...", "token": "...", "model": "...", "dim": 768},
+      "inference": {"base_url": "...", "token": "...", "alias": "a",
+                    "dashboard_url": "...", "dashboard_token": "..."},
+      "vision":    {"base_url": "...", "token": "...", "model": "...", "gpu": "T4"},
+      "finetune":  {"base_model": "...", "adapter_repo": "...", "hf_user": "..."},
+      "repos":     {"root": "/path/to/parent/dir"}
+   }
+
+Read path: `~/.config/modal-toolkit/config.json` (mode 600), overridable with
+`$MODAL_TOOLKIT_CONFIG`. Every field is also overridable per-call with
+environment variables (`$MODAL_BASE_URL`, `$MODAL_PROXY_TOKEN`, etc.), because
+operator overrides should never require editing a config file.
+
+The token is never printed. Only presence is ever reported (`set` vs `unset`).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+CONFIG_PATH_DEFAULT = Path.home() / ".config" / "modal-toolkit" / "config.json"
+
+PACKAGES = ("embedding", "inference", "vision", "finetune")
+
+# Fields each package section carries. Used by setup() to prompt the operator
+# and by validate() to tell them which keys are missing.
+FIELDS: dict[str, tuple[str, ...]] = {
+    "embedding": ("base_url", "token", "model", "dim"),
+    "inference": ("base_url", "token", "alias", "dashboard_url", "dashboard_token"),
+    "vision": ("base_url", "token", "model", "gpu"),
+    "finetune": ("base_model", "adapter_repo", "hf_user"),
+}
+
+# Environment variables that override file config, per package. Keys inside the
+# section names map to these env vars when set.
+ENV_OVERRIDES: dict[str, dict[str, str]] = {
+    "embedding": {
+        "base_url": "MODAL_BASE_URL",
+        "token": "MODAL_PROXY_TOKEN",
+        "model": "MODAL_EMBED_DEFAULT_MODEL",
+        "dim": "MODAL_EMBED_DEFAULT_DIM",
+    },
+    "inference": {
+        "base_url": "MODAL_BASE_URL",
+        "token": "MODAL_PROXY_TOKEN",
+        "alias": "MODEL_PROFILE",
+        "dashboard_url": "MODAL_INFERENCE_DASHBOARD_URL",
+        "dashboard_token": "MODAL_INFERENCE_DASHBOARD_TOKEN",
+    },
+    "vision": {
+        "base_url": "MODAL_BASE_URL",
+        "token": "MODAL_PROXY_TOKEN",
+        "model": "MODAL_VISION_MODEL",
+        "gpu": "MODAL_VISION_GPU",
+    },
+    "finetune": {
+        "base_model": "FINETUNE_BASE",
+        "adapter_repo": "FINETUNE_ADAPTER",
+        "hf_user": "HF_USER",
+    },
+}
+
+# The one path every deploy/run command needs: where the four sibling repos live.
+REPO_ENV = "MODAL_TOOLKIT_REPOS"
+
+
+def _path() -> Path:
+    env = os.getenv("MODAL_TOOLKIT_CONFIG", "").strip()
+    if env:
+        return Path(env).expanduser()
+    return CONFIG_PATH_DEFAULT
+
+
+def load() -> dict[str, Any]:
+    """Read the toolkit config, or {} when absent."""
+    p = _path()
+    if not p.exists():
+        return {}
+    return json.loads(p.read_text())
+
+
+def write(data: dict[str, Any]) -> Path:
+    """Persist the toolkit config and return the path. chmod 600."""
+    p = _path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2) + "\n")
+    p.chmod(0o600)
+    return p
+
+
+def section(pkg: str) -> dict[str, Any]:
+    """Resolve one package's effective settings (file + env overrides)."""
+    data = load()
+    out: dict[str, Any] = dict(data.get(pkg, {}))
+    for key, env_name in ENV_OVERRIDES.get(pkg, {}).items():
+        value = os.getenv(env_name, "").strip()
+        if value:
+            out[key] = value
+    return out
+
+
+def repos_root() -> Path:
+    """Where the four sibling repos live. Used by the per-package verbs when shelling out."""
+    env = os.getenv(REPO_ENV, "").strip()
+    if env:
+        return Path(env).expanduser()
+    # Fallback: read the `repos.root` key from the config.
+    value = str(load().get("repos", {}).get("root", "")).strip()
+    if value:
+        return Path(value).expanduser()
+    # Last resort: assume this script lives in <root>/modal-toolkit/toolkit/.
+    # Sibling repos live next to modal-toolkit/, so the parent of the checkout is the root.
+    return Path(__file__).resolve().parents[2]
+
+
+def require(pkg: str, keys: tuple[str, ...]) -> dict[str, Any]:
+    """Return one package's settings, erroring when required keys are missing."""
+    got = section(pkg)
+    missing = [k for k in keys if not got.get(k)]
+    if missing:
+        raise SystemExit(
+            f"{pkg} config is missing {', '.join(missing)}; "
+            f"run `mtk setup --package {pkg}` or set the matching env override."
+        )
+    return got
+
+
+def validate() -> dict[str, Any]:
+    """Audit the config; report per-package state and missing keys."""
+    out: dict[str, Any] = {"config_path": str(_path()), "packages": {}}
+    for pkg in PACKAGES:
+        got = section(pkg)
+        missing = [k for k in FIELDS.get(pkg, ()) if not got.get(k)]
+        out["packages"][pkg] = {
+            "ok": not missing,
+            "missing": missing,
+            "configured": sorted(got.keys()),
+        }
+    return out
