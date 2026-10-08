@@ -28,7 +28,7 @@ from typing import Any
 
 CONFIG_PATH_DEFAULT = Path.home() / ".config" / "modal-toolkit" / "config.json"
 
-PACKAGES = ("embedding", "inference", "vision", "finetune")
+PACKAGES = ("embedding", "inference", "vision", "finetune", "vault")
 
 # The provider name a client harness (Pi/OMP) uses to address the inference
 # lane. Configurable so different operators can namespace it differently
@@ -59,6 +59,8 @@ FIELDS: dict[str, tuple[str, ...]] = {
     # coding = the mci private fleet core (pkg added 2026-10-06). Dashboard
     # rows stay inference-only until the dashboard-split question resolves.
     "coding": ("base_url", "token", "alias"),
+    # vault = modal-vault-server: scale-to-zero CPU app; health is public.
+    "vault": ("base_url", "token"),
 }
 
 # Environment variables that override file config, per package. Keys inside the

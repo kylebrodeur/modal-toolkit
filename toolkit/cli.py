@@ -49,8 +49,9 @@ from toolkit.secrets import ManifestSecret, ManifestSpec
 TIMEOUT_S = 20
 
 # The packages, in dependency order (embedding first; coding = the mci
-# private fleet core, joined 2026-10-06 with its secrets manifest).
-PACKAGE_ORDER = ("embedding", "inference", "vision", "finetune", "coding")
+# private fleet core, joined 2026-10-06 with its secrets manifest; vault =
+# modal-vault-server, secrets-only until it gets a config surface).
+PACKAGE_ORDER = ("embedding", "inference", "vision", "finetune", "coding", "vault")
 
 # Health paths (mirrors what each server exposes).
 HEALTH: dict[str, str] = {
@@ -59,6 +60,8 @@ HEALTH: dict[str, str] = {
     "vision": "/health",
     # Finetune is a pipeline, not a server; its "health" is that the Modal App is deployable.
     "finetune": "",
+    # Vault serves a public /health (vault + sync triage); /mcp + /admin/* stay bearer-gated.
+    "vault": "/health",
 }
 
 # GPU hourly rates used by `mtk cost` when computing always-on burn.
@@ -80,8 +83,10 @@ def _repos_root() -> Path:
 def _pkg_repo(pkg: str) -> Path:
     """Path to one sibling repo; used when shelling into per-package verbs."""
     # Package names and repo names match exactly (modal-embedding-server etc),
-    # except finetune whose repo is modal-finetune-server.
-    repo_name = "modal-finetune-server" if pkg == "finetune" else f"modal-{pkg}-server"
+    # except finetune (modal-finetune-server) and vault (modal-vault-server),
+    # matching toolkit/secrets.py REPO_SPECIAL.
+    special = {"finetune": "modal-finetune-server", "vault": "modal-vault-server"}
+    repo_name = special.get(pkg, f"modal-{pkg}-server")
     path = _repos_root() / repo_name
     if not path.exists():
         raise SystemExit(f"{pkg} repo not found at {path}; set {cfg.REPO_ENV} or fix the config's repos.root.")
