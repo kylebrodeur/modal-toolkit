@@ -10,6 +10,7 @@ Full lifecycle across all four packages (embedding, inference, vision, finetune)
     mtk cost                             # per-package + blended GPU-hour view
     mtk flow                             # the ecosystem flowchart, live state
     mtk dashboard deploy|stop|logs|url   # the fleet dashboard (CPU Modal app)
+    mtk vault status|sync|pull-only|...  # ob passthrough INSIDE the vault container (never local sync)
 
     mtk metrics url | test               # VictoriaMetrics drop-in: effective URL, probe write
 
@@ -30,6 +31,7 @@ override the file without editing it.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import getpass
 import json
@@ -508,6 +510,90 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_vault(args: argparse.Namespace) -> int:
+    """`mtk vault <verb>`: operator passthrough to `ob` INSIDE the vault server container.
+
+    The ob binary, its login state, and the clone live in the Modal
+    container (Volume-backed); every verb runs there - nothing ever
+    syncs on this machine (reference: the writing-duo vault-ob.sh).
+    """
+    app_name = "modal-vault-server"
+    if args.subcommand == "sync":
+        cfg.require("vault", ("base_url", "token"))
+    ob_by_verb = {
+        "status": [f"ob sync-status --path {VAULT_CLONE_DIR}"],
+        "sync": [f"ob sync --path {VAULT_CLONE_DIR}"],
+        "pull-only": [f"ob sync-config --mode pull-only --path {VAULT_CLONE_DIR}"],
+        "list-remote": ["ob sync-list-remote"],
+        "list-local": ["ob sync-list-local"],
+        "config": [f"ob sync-config --path {VAULT_CLONE_DIR}"],
+        "exec": [f"ob {args.ob_args} ".rstrip()],
+    }
+    if args.subcommand == "logs":
+        return _vault_logs(app_name)
+    commands = ob_by_verb[args.subcommand]
+    return _vault_exec(app_name, commands[0])
+
+
+VAULT_CLONE_DIR = "/vault"
+
+
+def _vault_url(cfg_pkg: dict[str, Any]) -> str:
+    return str(cfg_pkg.get("base_url", "")).rstrip("/")
+
+
+def _vault_container_id(app_name: str, base_url: str) -> str:
+    """Wake the scale-to-zero app, then poll for its live container id."""
+    import urllib.request
+
+    with contextlib.suppress(Exception):
+        urllib.request.urlopen(base_url + "/health", timeout=120)
+    for _ in range(20):
+        listing = subprocess.run(["modal", "container", "list"], capture_output=True, text=True, check=False)
+        for line in listing.stdout.splitlines():
+            if "ta-" in line:
+                candidate = line.split("│")[2].strip() if "│" in line else ""
+                if candidate.startswith("ta-"):
+                    return candidate
+        time.sleep(2)
+    raise SystemExit(f"no live container for {app_name}; is it deployed?")
+
+
+def _vault_exec(app_name: str, command: str) -> int:
+    section = cfg.load().get("vault", {})
+    base_url = _vault_url(section)
+    if not base_url:
+        raise SystemExit("vault not configured: run mtk setup (or set $VAULT_BASE_URL)")
+    cid = _vault_container_id(app_name, base_url)
+    proc = subprocess.run(
+        ["modal", "container", "exec", cid, "--", "sh", "-c", f"export XDG_CONFIG_HOME=/vault/state; exec {command}"],
+        check=False,
+    )
+    return proc.returncode
+
+
+def _vault_logs(app_name: str) -> int:
+    section = cfg.load().get("vault", {})
+    base_url = _vault_url(section)
+    if not base_url:
+        raise SystemExit("vault not configured: run mtk setup (or set $VAULT_BASE_URL)")
+    cid = _vault_container_id(app_name, base_url)
+    proc = subprocess.run(
+        [
+            "modal",
+            "container",
+            "exec",
+            cid,
+            "--",
+            "sh",
+            "-c",
+            "tail -n 40 '/vault/state/obsidian-headless/sync/'*'/sync.log' 2>/dev/null || true",
+        ],
+        check=False,
+    )
+    return proc.returncode
+
+
 def cmd_embedding(args: argparse.Namespace) -> int:
     """Per-package dispatch for the embedding server."""
     if args.subcommand == "sync":
@@ -633,6 +719,13 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard_p = sub.add_parser("dashboard", help="fleet dashboard app (deploy/stop/logs/url)")
     dashboard_p.add_argument("subcommand", choices=["deploy", "stop", "logs", "url"])
     dashboard_p.set_defaults(func=cmd_dashboard)
+
+    vault = sub.add_parser("vault", help="vault package verbs: ob inside the container (never local sync)")
+    vault.add_argument(
+        "subcommand", choices=["status", "sync", "pull-only", "list-remote", "list-local", "config", "logs", "exec"]
+    )
+    vault.add_argument("ob_args", nargs="*", help="passthrough args for the exec/config verbs")
+    vault.set_defaults(func=cmd_vault)
 
     finetune = sub.add_parser("finetune", help="finetune package verbs (train, eval, gguf)")
     finetune.add_argument("subcommand", choices=["train", "eval", "gguf"])
