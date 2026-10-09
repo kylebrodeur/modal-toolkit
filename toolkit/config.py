@@ -95,6 +95,51 @@ ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "adapter_repo": "FINETUNE_ADAPTER",
         "hf_user": "HF_USER",
     },
+    "vault": {
+        "base_url": "VAULT_BASE_URL",
+        "token": "VAULT_TOKEN",
+    },
+}
+
+# Per-package enabled semantics: a section is "enabled" when its required
+# keys resolve (configured). An explicit "enabled": false in the config
+# disables it regardless (the dashboard card + status honor it). Verbs on a
+# disabled/unconfigured package fail with the EXACT missing keys + fix line.
+ENABLED_OVERRIDES_ENV: dict[str, str] = {
+    "embedding": "MODAL_EMBED_ENABLED",
+    "inference": "MODAL_INFERENCE_ENABLED",
+    "vision": "MODAL_VISION_ENABLED",
+    "finetune": "MODAL_FINETUNE_ENABLED",
+    "vault": "VAULT_ENABLED",
+}
+
+
+def enabled(pkg: str) -> bool:
+    """The package's enabled state: enabled key (default: configured-ness)."""
+    section_data = section(pkg)
+    manual = str(section_data.get("enabled", "")).strip().lower()
+    if manual in ("true", "1", "yes"):
+        return True
+    if manual in ("false", "0", "no"):
+        return False
+    env_name = ENABLED_OVERRIDES_ENV.get(pkg)
+    if env_name:
+        env_value = os.getenv(env_name, "").strip().lower()
+        if env_value:
+            return env_value in ("true", "1", "yes")
+    required = REQUIRED_KEYS.get(pkg)
+    if required is None:
+        return bool(section_data)  # no required spec: any section counts
+    return all(section_data.get(key) for key in required)
+
+
+# The keys a VERB needs before it can run per package (subset of FIELDS).
+REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
+    "embedding": ("base_url", "token"),
+    "inference": ("base_url", "token", "alias"),
+    "vision": ("base_url", "token"),
+    "vault": ("base_url", "token"),
+    # finetune/coding: verb-specific; no single required trio
 }
 
 # The one path every deploy/run command needs: where the four sibling repos live.
@@ -151,25 +196,33 @@ def repos_root() -> Path:
 
 
 def require(pkg: str, keys: tuple[str, ...]) -> dict[str, Any]:
-    """Return one package's settings, erroring when required keys are missing."""
+    """Return one package's settings, erroring with the EXACT fix when missing.
+
+    The gate every per-package verb goes through: names the missing keys and
+    the two real fix lines (`mtk setup --repos-root ...` / the package's env
+    overrides from ENV_OVERRIDES), then exits 2.
+    """
     got = section(pkg)
-    missing = [k for k in keys if not got.get(k)]
+    missing = [key for key in keys if not got.get(key)]
     if missing:
+        env_names = [ENV_OVERRIDES.get(pkg, {}).get(key, "<set in config>") for key in missing]
         raise SystemExit(
-            f"{pkg} config is missing {', '.join(missing)}; "
-            f"run `mtk setup --package {pkg}` or set the matching env override."
+            f"{pkg} is not configured: missing {', '.join(missing)}. Fix with EITHER:\n"
+            f"  mtk setup --repos-root <dir-holding-the-repos>   (writes ~/.config/modal-toolkit/config.json)\n"
+            f"  export {env_names[0]}=... {' '.join('export ' + n + '=...' for n in env_names[1:])}"
         )
     return got
 
 
 def validate() -> dict[str, Any]:
-    """Audit the config; report per-package state and missing keys."""
+    """Audit the config; per-package state: configured/enabled/missing keys."""
     out: dict[str, Any] = {"config_path": str(_path()), "packages": {}}
     for pkg in PACKAGES:
         got = section(pkg)
-        missing = [k for k in FIELDS.get(pkg, ()) if not got.get(k)]
+        missing = [key for key in FIELDS.get(pkg, ()) if not got.get(key)]
         out["packages"][pkg] = {
             "ok": not missing,
+            "enabled": enabled(pkg),
             "missing": missing,
             "configured": sorted(got.keys()),
         }

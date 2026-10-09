@@ -251,6 +251,56 @@ def _modal_run(pkg: str, *argv: str, timeout: int = 300) -> tuple[bool, str, str
     return result.returncode == 0, f"elapsed={elapsed}s", (result.stdout + result.stderr).strip()
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    """One table: per package - configured/enabled/secrets-healthy/reachable.
+
+    What a trial user runs FIRST: it reads config state (cheap) and only
+    touches the network for the reachability line (--net, default on; use
+    --no-net for a config-only glance).
+    """
+    audit = cfg.validate()
+    pkg_secret_state: dict[str, Any] = {}
+    secrets_broken: str | None = None
+    try:
+        pkg_secret_state = mtk_secrets.check_all(list(audit["packages"]))
+    except SystemExit as exc:
+        secrets_broken = str(exc)
+    print(f"{'package':<11} {'configured':<11} {'enabled':<9} {'secrets':<12} {'reachable'}")
+    for pkg, state in audit["packages"].items():
+        secrets_state = "n/a"
+        if secrets_broken is not None:
+            secrets_state = "error"
+        else:
+            pkg_state = pkg_secret_state.get(pkg)
+            if pkg_state is not None and pkg_state.manifest_found:
+                secrets_state = "ok" if not pkg_state.missing else f"missing {len(pkg_state.missing)}"
+        reachable = "n/a"
+        if args.net and state["enabled"] and state["ok"]:
+            reachable = _reachable_mark(pkg)
+        missing_txt = "" if state["ok"] else f" (missing: {', '.join(state['missing'])})"
+        print(f"{pkg:<11} {state['ok']!s:<11} {state['enabled']!s:<9} {secrets_state:<12} {reachable}{missing_txt}")
+    if secrets_broken is not None:
+        print(f"secrets subsystem: {secrets_broken}")
+    return 0
+
+
+def _reachable_mark(pkg: str) -> str:
+    """Short-timeout health probe mark: up | down | cold (never long)."""
+    health_paths = {"embedding": "/health", "inference": "/health", "vision": "/health", "vault": "/health"}
+    path = health_paths.get(pkg)
+    section_state = cfg.section(pkg)
+    base = str(section_state.get("base_url", "")).rstrip("/")
+    if not base:
+        return "no-url"
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(base + (path or ""), timeout=3) as response:
+            return "up" if response.status == 200 else f"http-{response.status}"
+    except Exception as exc:
+        return "down" if "timed out" not in str(exc).lower() else "cold"
+
+
 def cmd_shutdown(args: argparse.Namespace) -> int:
     """Scale GPU to zero now (per package or --all)."""
     wanted = []
@@ -516,10 +566,11 @@ def cmd_vault(args: argparse.Namespace) -> int:
     The ob binary, its login state, and the clone live in the Modal
     container (Volume-backed); every verb runs there - nothing ever
     syncs on this machine (reference: the writing-duo vault-ob.sh).
+    Every verb needs the vault section's base_url (waking the app) -
+    one consistent gate with the exact fix line.
     """
+    section = cfg.require("vault", ("base_url",))
     app_name = "modal-vault-server"
-    if args.subcommand == "sync":
-        cfg.require("vault", ("base_url", "token"))
     ob_by_verb = {
         "status": [f"ob sync-status --path {VAULT_CLONE_DIR}"],
         "sync": [f"ob sync --path {VAULT_CLONE_DIR}"],
@@ -534,15 +585,14 @@ def cmd_vault(args: argparse.Namespace) -> int:
     }
     if args.subcommand == "logs":
         return _vault_logs(app_name)
-    commands = ob_by_verb[args.subcommand]
-    return _vault_exec(app_name, commands[0])
+    return _vault_exec(app_name, ob_by_verb[args.subcommand][0], section)
 
 
 VAULT_CLONE_DIR = "/vault"
 
 
-def _vault_url(cfg_pkg: dict[str, Any]) -> str:
-    return str(cfg_pkg.get("base_url", "")).rstrip("/")
+def _vault_url(section: dict[str, Any]) -> str:
+    return str(section.get("base_url", "")).rstrip("/")
 
 
 def _vault_container_id(app_name: str, base_url: str) -> str:
@@ -562,11 +612,10 @@ def _vault_container_id(app_name: str, base_url: str) -> str:
     raise SystemExit(f"no live container for {app_name}; is it deployed?")
 
 
-def _vault_exec(app_name: str, command: str) -> int:
-    section = cfg.load().get("vault", {})
+def _vault_exec(app_name: str, command: str, section: dict[str, Any]) -> int:
     base_url = _vault_url(section)
     if not base_url:
-        raise SystemExit("vault not configured: run mtk setup (or set $VAULT_BASE_URL)")
+        raise SystemExit("vault not configured: set VAULT_BASE_URL or the config's vault.base_url")
     cid = _vault_container_id(app_name, base_url)
     proc = subprocess.run(
         ["modal", "container", "exec", cid, "--", "sh", "-c", f"export XDG_CONFIG_HOME=/vault/state; exec {command}"],
@@ -576,10 +625,10 @@ def _vault_exec(app_name: str, command: str) -> int:
 
 
 def _vault_logs(app_name: str) -> int:
-    section = cfg.load().get("vault", {})
+    section = cfg.section("vault")
     base_url = _vault_url(section)
     if not base_url:
-        raise SystemExit("vault not configured: run mtk setup (or set $VAULT_BASE_URL)")
+        raise SystemExit("vault not configured: set VAULT_BASE_URL or the config's vault.base_url")
     cid = _vault_container_id(app_name, base_url)
     proc = subprocess.run(
         [
@@ -659,6 +708,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     cfg_p = sub.add_parser("config", help="inspect + validate the toolkit config")
     cfg_p.set_defaults(func=cmd_config)
+
+    status_p = sub.add_parser("status", help="per-package: configured/enabled/secrets/reachable (start here)")
+    status_p.add_argument("--net", dest="net", action="store_true", default=True, help="probe reachability (default)")
+    status_p.add_argument("--no-net", dest="net", action="store_false", help="config-only glance (no network)")
+    status_p.set_defaults(func=cmd_status)
 
     doctor = sub.add_parser("doctor", help="health + drift across all four packages")
     doctor.add_argument("--pkg", help="comma-separated package names (default: all)")
