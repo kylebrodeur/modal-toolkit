@@ -527,6 +527,9 @@ def cmd_vault(args: argparse.Namespace) -> int:
         "list-remote": ["ob sync-list-remote"],
         "list-local": ["ob sync-list-local"],
         "config": [f"ob sync-config --path {VAULT_CLONE_DIR}"],
+        "sync-on-write": [f"ob sync-config --mode bidirectional --path {VAULT_CLONE_DIR}"],
+        "mirror-remote": [f"ob sync-config --mode mirror-remote --path {VAULT_CLONE_DIR}"],
+        "continuous": [f"ob sync --path {VAULT_CLONE_DIR} --continuous"],
         "exec": [f"ob {args.ob_args} ".rstrip()],
     }
     if args.subcommand == "logs":
@@ -722,7 +725,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     vault = sub.add_parser("vault", help="vault package verbs: ob inside the container (never local sync)")
     vault.add_argument(
-        "subcommand", choices=["status", "sync", "pull-only", "list-remote", "list-local", "config", "logs", "exec"]
+        "subcommand",
+        choices=[
+            "status",
+            "sync",
+            "pull-only",
+            "sync-on-write",
+            "mirror-remote",
+            "continuous",
+            "list-remote",
+            "list-local",
+            "config",
+            "logs",
+            "exec",
+        ],
     )
     vault.add_argument("ob_args", nargs="*", help="passthrough args for the exec/config verbs")
     vault.set_defaults(func=cmd_vault)
