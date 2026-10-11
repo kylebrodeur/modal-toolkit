@@ -186,7 +186,7 @@ checkout by path:
 - **The rule that matters:** upstream repos are never modified by deploys;
   operator state lives in the overlay, not in the source repo.
 - **Secret-name invariant:** `deploy.json`'s secret NAMES must match the
-  repo's `server/secrets.toml` manifest — the manifest is the source of
+  repo's `server/secrets.toml` manifest - the manifest is the source of
   truth `mtk secrets` acts against, so overlays never invent names.
 - **No `mtk deploy` wrapper (by design):** the package's own CLI + the
   operator overlay beat a generic dispatcher.

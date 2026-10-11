@@ -1,4 +1,4 @@
-# AGENTS.md — modal-toolkit
+# AGENTS.md - modal-toolkit
 
 Agent instructions for THIS repo (v1.4.1 on `main`). The family-wide
 rules live in the system workspace's AGENTS.md
@@ -75,7 +75,7 @@ uv run pytest tests -q
 
 ## The lifecycle hook seam
 
-- `toolkit/libs/hooks.py` is the VENDORED copy (mtk libs sync); its tags are the CLI-internal set if any — check the module docstring.
+- `toolkit/libs/hooks.py` is the VENDORED copy (mtk libs sync); its tags are the CLI-internal set if any - check the module docstring.
 ## Prose rules (this is a public repo)
 
 No personal identifiers, no em/en dashes in prose, no AI-slop words
