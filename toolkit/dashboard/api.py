@@ -36,6 +36,12 @@ def build_fleet_api(
 
     package_cfg: the dashboard config's per-package section
       ({base_url, token, enabled}); adapters: {key: adapter}.
+
+    Each config entry resolves to an adapter via its own `card_type`
+    field when present (multi-instance-of-one-type: several entries can
+    share one card_type under distinct keys), falling back to the
+    entry's own key (the pre-existing, backward-compatible contract
+    where key == card type).
     """
     from contextlib import asynccontextmanager
 
@@ -48,6 +54,19 @@ def build_fleet_api(
     app = FastAPI(title="Modal Toolkit Fleet Dashboard", lifespan=lifespan)
     mount_auth(app, session)
 
+    # Resolve every entry to probe: the adapters' own keys first (legacy,
+    # back-compat default), then any package_cfg entries carrying an
+    # explicit card_type that resolves to a known adapter - letting
+    # several entries of one card_type coexist under distinct keys.
+    entries_to_probe: dict[str, Any] = dict(adapters)
+    for key, section in package_cfg.items():
+        if key in entries_to_probe or not isinstance(section, Mapping):
+            continue
+        card_type = section.get("card_type")
+        adapter = adapters.get(card_type) if card_type else None
+        if adapter is not None:
+            entries_to_probe[key] = adapter
+
     def _enabled(key: str) -> bool:
         section = package_cfg.get(key, {})
         return bool(section.get("enabled", True)) and bool(str(section.get("base_url", "")) or key == "finetune")
@@ -57,7 +76,7 @@ def build_fleet_api(
         if not session.authorized(request):
             return Response(status_code=401, content="unauthorized")
         packages: dict[str, Any] = {}
-        for key, adapter in adapters.items():
+        for key, adapter in entries_to_probe.items():
             if key != "finetune" and not _enabled(key):
                 continue
             cfg = dict(package_cfg.get(key, {}))
@@ -71,7 +90,7 @@ def build_fleet_api(
                 "health": _probe_dict(health),
                 "detail": _probe_dict(detail),
             }
-        return {"packages": packages, "order": list(adapters)}
+        return {"packages": packages, "order": list(entries_to_probe)}
 
     @app.post("/_toolkit/api/billing/refresh")
     async def billing_refresh(request: Request):

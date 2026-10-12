@@ -118,6 +118,44 @@ def test_dashboard_config_seeds_packages_with_enabled_flags():
     assert pkgs["finetune"]["app_name"] == "modal-finetune-server"
 
 
+def test_dashboard_config_passes_through_card_type_entries():
+    # Multi-instance-of-one-type: a key outside PACKAGES_WITH_CARDS with an
+    # explicit card_type is seeded as its own entry, carrying the card_type
+    # through so the dashboard can resolve its adapter.
+    body = dashboard_config(
+        {
+            "hemmingway-lane": {
+                "card_type": "inference",
+                "base_url": "https://hemmingway.example.com",
+                "token": "t1",
+            },
+            "eclipse-lane": {
+                "card_type": "inference",
+                "base_url": "https://eclipse.example.com",
+                "token": "t2",
+                "enabled": False,
+            },
+        }
+    )
+    pkgs = body["packages"]
+    assert pkgs["hemmingway-lane"]["card_type"] == "inference"
+    assert pkgs["hemmingway-lane"]["enabled"] is True
+    assert pkgs["eclipse-lane"]["card_type"] == "inference"
+    assert pkgs["eclipse-lane"]["enabled"] is False
+    # Fixed single-instance keys unaffected: no card_type key added to them.
+    assert (
+        "card_type"
+        not in dashboard_config({"inference": {"base_url": "https://i.example.com"}})["packages"]["inference"]
+    )
+
+
+def test_dashboard_config_ignores_unknown_card_type():
+    # A card_type that doesn't match a known adapter is not seeded at all
+    # (fail-closed: no silent unrenderable card).
+    body = dashboard_config({"mystery-lane": {"card_type": "nonexistent", "base_url": "https://x.example.com"}})
+    assert "mystery-lane" not in body["packages"]
+
+
 class _StaticAdapter:
     key = "static"
     label = "Static"
@@ -163,6 +201,47 @@ def test_stats_sees_configured_enabled_only(monkeypatch):
     assert fake.status_code == 200
     assert body["packages"]["static"]["health"]["ok"] is True
     assert body["packages"]["static"]["detail"]["data"]["headline"] == "v1"
+
+
+def test_stats_renders_two_instances_of_one_card_type(monkeypatch):
+    # The multi-instance-of-one-type request: two config entries share
+    # card_type "static" (pointing at the same adapter) under distinct
+    # keys, and both render as separate cards.
+    monkeypatch.setenv("MODAL_TOOLKIT_DASHBOARD_TOKEN", "t")
+    adapters_map = {"static": _StaticAdapter({"headline": "v1"})}
+    cfg = {
+        "lane-a": {"card_type": "static", "base_url": "http://x", "token": "ta"},
+        "lane-b": {"card_type": "static", "base_url": "http://y", "token": "tb"},
+    }
+    client = TestClient(build_fleet_api(cfg, adapters_map))
+    r = client.get("/_toolkit/api/stats", cookies={"modal_toolkit_dashboard_session": Session(token="t").value()})
+    body = r.json()
+    assert body["packages"]["lane-a"]["detail"]["data"]["headline"] == "v1"
+    assert body["packages"]["lane-b"]["detail"]["data"]["headline"] == "v1"
+    assert "lane-a" in body["order"]
+    assert "lane-b" in body["order"]
+
+
+def test_stats_card_type_entry_respects_its_own_enabled_flag(monkeypatch):
+    monkeypatch.setenv("MODAL_TOOLKIT_DASHBOARD_TOKEN", "t")
+    adapters_map = {"static": _StaticAdapter({"headline": "v1"})}
+    cfg = {
+        "lane-a": {"card_type": "static", "base_url": "http://x", "enabled": True},
+        "lane-b": {"card_type": "static", "base_url": "http://y", "enabled": False},
+    }
+    client = TestClient(build_fleet_api(cfg, adapters_map))
+    r = client.get("/_toolkit/api/stats", cookies={"modal_toolkit_dashboard_session": Session(token="t").value()})
+    body = r.json()
+    assert "lane-a" in body["packages"]
+    assert "lane-b" not in body["packages"]
+
+
+def test_stats_legacy_single_instance_config_unaffected():
+    # No card_type anywhere: behavior is byte-for-byte the pre-existing
+    # key == card-type contract.
+    body = dashboard_config({"inference": {"base_url": "https://i.example.com", "token": "t"}})
+    assert body["packages"]["inference"]["base_url"] == "https://i.example.com"
+    assert "card_type" not in body["packages"]["inference"]
 
 
 from toolkit.dashboard.api import build_fleet_api  # noqa: E402

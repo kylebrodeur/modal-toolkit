@@ -39,6 +39,26 @@ def dashboard_config(toolkit_cfg: dict[str, Any]) -> dict[str, Any]:
         if section.get("app_name"):
             entry["app_name"] = str(section["app_name"])
         packages[pkg] = entry
+    # Multi-instance-of-one-type: any other config key carrying an
+    # explicit card_type is seeded under its own identity key, keeping
+    # that card_type so the dashboard can resolve which adapter to use.
+    # Unknown card_type -> not seeded at all (fail-closed; no silent
+    # unrenderable card).
+    for key, section in toolkit_cfg.items():
+        if key in PACKAGES_WITH_CARDS or not isinstance(section, dict):
+            continue
+        card_type = section.get("card_type")
+        if card_type not in PACKAGES_WITH_CARDS:
+            continue
+        entry = {
+            "card_type": card_type,
+            "base_url": str(section.get("base_url", "")),
+            "token": str(section.get("token", "")),
+            "enabled": bool(section.get("enabled", bool(section.get("base_url")))),
+        }
+        if section.get("app_name"):
+            entry["app_name"] = str(section["app_name"])
+        packages[key] = entry
     return {"packages": packages}
 
 
