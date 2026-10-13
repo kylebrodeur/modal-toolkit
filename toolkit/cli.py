@@ -37,6 +37,7 @@ import argparse
 import dataclasses
 import getpass
 import json
+import os
 import secrets
 import subprocess
 import sys
@@ -305,6 +306,48 @@ def _modal_run(pkg: str, *argv: str, timeout: int = 300) -> tuple[bool, str, str
     return result.returncode == 0, f"elapsed={elapsed}s", (result.stdout + result.stderr).strip()
 
 
+def _confirm_app_stop(app_name: str, *, force: bool) -> bool:
+    """Fail-closed arm gate in front of every real `modal app stop`.
+
+    `modal app stop` UNDEPLOYS the app: every Function/Cls is torn down,
+    in-flight requests are dropped, and the URL is dead until the next
+    `modal deploy`. This is commonly confused with scaling a GPU to
+    zero (automatic and reversible via `scaledown_window`/
+    `min_containers`, no human action needed) - so this gate never
+    auto-confirms (no blind `-y`).
+
+    Interactive path: the operator must type the exact app name back.
+    Scripted/CI path: `--force` alone is not enough - it ALSO requires
+    `MTK_ALLOW_APP_STOP=1` in the environment, two independent explicit
+    signals instead of one flag an automation script could pass by
+    habit.
+    """
+    if force:
+        if os.environ.get("MTK_ALLOW_APP_STOP", "").strip() != "1":
+            print(
+                f"refusing to stop app {app_name!r}: --force also requires MTK_ALLOW_APP_STOP=1 in the environment",
+                file=sys.stderr,
+            )
+            return False
+        return True
+    print(
+        f"`modal app stop {app_name}` UNDEPLOYS the app - every Function/Cls is "
+        "torn down, in-flight requests are dropped, and the URL is dead until "
+        "the next `modal deploy`. This is NOT scale-to-zero (that is automatic "
+        "via scaledown_window/min_containers and needs no action).",
+        file=sys.stderr,
+    )
+    try:
+        typed = input(f"Type the app name to confirm ({app_name}): ")
+    except (EOFError, KeyboardInterrupt):
+        print("refused: no confirmation received", file=sys.stderr)
+        return False
+    if typed.strip() != app_name:
+        print("refused: typed name did not match", file=sys.stderr)
+        return False
+    return True
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """One table: per package - configured/enabled/secrets-healthy/reachable.
 
@@ -362,7 +405,15 @@ def _reachable_mark(pkg: str) -> str:
 
 
 def cmd_shutdown(args: argparse.Namespace) -> int:
-    """Scale GPU to zero now (per package or --all)."""
+    """Scale GPU to zero now (per package or --all).
+
+    Note: this is NOT `modal app stop` for most packages - it fires the
+    package's own cheap scale-to-zero path (or does nothing where the
+    autoscaler already handles it). The `vision` branch is the one
+    exception that reaches real `modal app stop` (an undeploy), and it
+    is arm-gated via `_confirm_app_stop` - see that function's docstring
+    for why `modal app stop` must never auto-confirm.
+    """
     wanted = []
     if args.all:
         wanted = list(PACKAGE_ORDER)
@@ -371,6 +422,7 @@ def cmd_shutdown(args: argparse.Namespace) -> int:
     else:
         raise SystemExit("specify --pkg <name> or --all")
 
+    force = bool(getattr(args, "force", False))
     for pkg in wanted:
         if pkg not in PACKAGE_ORDER:
             print(f"skipping unknown pkg {pkg!r}", file=sys.stderr)
@@ -385,8 +437,13 @@ def cmd_shutdown(args: argparse.Namespace) -> int:
             # Embedding has no GPU worker to stop; cheap CPU-only FastAPI app.
             print(f"{pkg:10s}  (CPU-only FastAPI, nothing to shutdown)")
         elif pkg == "vision":
-            # Vision's scaledown is a container-lifecycle concern; it's CPU-warm/zero via autoscaler.
-            ok, detail, _ = _modal_run(pkg, "app", "stop", "-y", "modal-vision-server")
+            # This is a real `modal app stop` (undeploy), not scale-to-zero;
+            # it goes through the arm gate - no blind auto-confirm.
+            app_name = "modal-vision-server"
+            if not _confirm_app_stop(app_name, force=force):
+                print(f"{pkg:10s}  stop refused (not confirmed)")
+                continue
+            ok, detail, _ = _modal_run(pkg, "app", "stop", app_name)
             mark = "stopped" if ok else "already-cold/failed"
             print(f"{pkg:10s}  stop {mark}  {detail}")
         elif pkg == "finetune":
@@ -610,6 +667,9 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             print(out)
             return 0 if ok else 1
         if args.subcommand == "stop":
+            if not _confirm_app_stop(name, force=bool(getattr(args, "force", False))):
+                print("stop refused (not confirmed)", file=sys.stderr)
+                return 1
             ok, _detail, out = _modal_run("dashboard", "app", "stop", name, timeout=120)
             print(out)
             return 0 if ok else 1
@@ -715,6 +775,12 @@ def build_parser() -> argparse.ArgumentParser:
     shutdown = sub.add_parser("shutdown", help="scale GPU(s) to zero now")
     shutdown.add_argument("--pkg", help="comma-separated package names")
     shutdown.add_argument("--all", action="store_true")
+    shutdown.add_argument(
+        "--force",
+        action="store_true",
+        help="scripted/CI confirmation for the real `modal app stop` path (vision); "
+        "also requires MTK_ALLOW_APP_STOP=1 in the environment",
+    )
     shutdown.set_defaults(func=cmd_shutdown)
 
     cost_p = sub.add_parser("cost", help="per-package + blended GPU-hour view")
@@ -755,6 +821,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     dashboard_p = sub.add_parser("dashboard", help="fleet dashboard app (deploy/stop/logs/url)")
     dashboard_p.add_argument("subcommand", choices=["deploy", "stop", "logs", "url"])
+    dashboard_p.add_argument(
+        "--force",
+        action="store_true",
+        help="scripted/CI confirmation for `dashboard stop`'s real `modal app stop`; "
+        "also requires MTK_ALLOW_APP_STOP=1 in the environment",
+    )
     dashboard_p.set_defaults(func=cmd_dashboard)
 
     libs_p = sub.add_parser("libs", help="shared-library vending: sync (vendor verbatim) | check (parity, CI gate)")
