@@ -661,7 +661,6 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         return 0
     if args.subcommand in ("stop", "logs", "url"):
         name = "modal-toolkit-dashboard"
-        subprocess.run(["modal", "secret", "list", "--json"], capture_output=True, text=True, check=False)
         if args.subcommand == "logs":
             ok, _detail, out = _modal_run("dashboard", "app", "logs", name, timeout=60)
             print(out)
