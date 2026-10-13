@@ -49,6 +49,7 @@ import httpx
 
 from toolkit import config as cfg
 from toolkit import pkg_commands
+from toolkit import project as mtk_project
 from toolkit import secrets as mtk_secrets
 from toolkit.secrets import ManifestSecret, ManifestSpec
 
@@ -738,9 +739,75 @@ def _mount_package_commands(sub: argparse._SubParsersAction) -> None:
 # ── Parser ──────────────────────────────────────────────────────────────────
 
 
+def cmd_init(args: argparse.Namespace) -> int:
+    """`mtk init [<project-id>]`: scaffold a project record. Read-only against Modal.
+
+    Order matters: validate the slug, run the prerequisite and account checks,
+    and only then write anything. A failed check leaves no scaffold behind.
+    """
+    base = Path.cwd()
+    slug = mtk_project.resolve_slug(base, args.project_id)
+    apps = mtk_project.check_prerequisites()
+    mtk_project.check_collisions(slug, apps)
+    root = mtk_project.init_project(base, args.project_id)
+    print(f"initialized project {slug!r} at {root}")
+    print(f"  record: {root / '.mtk' / 'config.json'}")
+    print("  next: mtk pull <pkg> ...  then  mtk deploy <pkg>")
+    return 0
+
+
+def cmd_pull(args: argparse.Namespace) -> int:
+    """`mtk pull <pkg> [...]`: clone missing package repos into the repos root, record them."""
+    project_root = Path.cwd()
+    repos_root = cfg.repos_root()
+    mtk_project.pull_packages(project_root, repos_root, list(args.packages))
+    for pkg in args.packages:
+        print(f"pulled {pkg}: {repos_root / mtk_project.REPO_NAMES[pkg]}")
+    return 0
+
+
+def _confirm_secret(name: str) -> bool:
+    """Ask before creating a missing secret. Anything but y or yes declines."""
+    print(f"secret {name!r} is missing from your Modal workspace.")
+    try:
+        return input("Create it now? [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
+
+
+def cmd_deploy(args: argparse.Namespace) -> int:
+    """`mtk deploy <pkg>`: preflight the overlay, gate on secrets, then run its deploy.sh.
+
+    Refusals raise ProjectError before any account write. The write (secret
+    creation) happens only after every missing secret is confirmed.
+    """
+    project_root = Path.cwd()
+    mtk_project.check_prerequisites()
+    overlay = mtk_project.check_overlay(project_root, args.pkg)
+
+    status = mtk_secrets.check_all([args.pkg]).get(args.pkg)
+    missing = mtk_project.missing_secrets(status, args.pkg)
+
+    def _create(_names: list[str]) -> None:
+        rc = mtk_secrets.create(argparse.Namespace(pkg=args.pkg, all=False, force=False))
+        if rc != 0:
+            raise mtk_project.ProjectError(f"creating secrets for {args.pkg!r} failed (see output above)")
+
+    mtk_project.ensure_secrets(missing, confirm=_confirm_secret, create_all=_create)
+    return subprocess.run(["sh", str(overlay / "deploy.sh")], cwd=overlay, check=False).returncode
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="mtk", description="Operator CLI for the Modal Toolkit")
     sub = p.add_subparsers(dest="command", required=True)
+    init_p = sub.add_parser("init", help="scaffold a project (read-only check of prerequisites and account)")
+    init_p.add_argument("project_id", nargs="?", help="project id; omit to use the current directory")
+    pull_p = sub.add_parser("pull", help="clone package repos into the repos root and record them in this project")
+    pull_p.add_argument("packages", nargs="+", help="package names, e.g. vault embedding")
+    pull_p.set_defaults(func=cmd_pull)
+    deploy_p = sub.add_parser("deploy", help="deploy a package from this project's deploys/<pkg>/ overlay")
+    deploy_p.add_argument("pkg", help="package name, e.g. vault")
+    deploy_p.set_defaults(func=cmd_deploy)
 
     setup = sub.add_parser("setup", help="write the shared config (per-package sections)")
     setup.add_argument(
@@ -861,6 +928,9 @@ def main() -> int:
         raise
     except (httpx.HTTPError, OSError) as exc:
         print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    except mtk_project.ProjectError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 1
 
 
