@@ -29,7 +29,7 @@ A single entry point for **fleet-level commands** that don't belong in any one p
 | `mtk status [--no-net]` | One table: configured/enabled/secrets/reachable per package (`--no-net` = config-only glance) |
 | `mtk doctor [--pkg ... --json]` | Health + drift across all packages in one shot (mark per package: ok / unhealthy / unreachable / cold / repo) |
 | `mtk warm [--pkg ... --all]` | Cold-start a package's GPU worker |
-| `mtk shutdown [--pkg ... --all]` | Scale GPU(s) to zero now |
+| `mtk shutdown [--pkg ... --all]` | Scale GPU(s) to zero now (the `vision` package's path is a real `modal app stop` - undeploy, not scale-to-zero - and is arm-gated: typed confirmation, or `--force` + `MTK_ALLOW_APP_STOP=1`) |
 | `mtk cost` | Per-package + blended always-on GPU-hour view |
 | `mtk flow` | The ecosystem flowchart, rendered against live state |
 | `mtk dashboard deploy \| stop \| logs \| url` | The fleet dashboard: one CPU app, a card per GPU-serving package |
@@ -73,6 +73,12 @@ actually exposes:
 - **finetune:** a job package with no server and no `/health`: the card
   states that nature and makes no remote probe.
 
+Each config entry can carry an optional `card_type` field, so multiple
+instances of one package type (two independent `modal-inference-server`
+deployments, for example) each render as their own card under a
+distinct key instead of colliding. Omit it and the pre-existing
+contract is unchanged: the entry's own key is its card type.
+
 Session auth is its own bearer credential
 (`MODAL_TOOLKIT_DASHBOARD_TOKEN`, hash-fragment autologin supported).
 Billing is fleet-wide: metered month/today, workspace billed vs
@@ -82,7 +88,7 @@ credits, per-app split, and a workspace-disabled banner.
 modal secret create modal-toolkit-dashboard-secret MODAL_TOOLKIT_DASHBOARD_TOKEN=$(openssl rand -hex 32)
 mtk dashboard deploy   # builds + deploys the CPU app (config Volume reads dashboard-config.json if present)
 # open the printed URL ... or visit /_toolkit/login#key=<credential>
-mtk dashboard stop     # scale to zero
+mtk dashboard stop     # undeploys the dashboard app (modal app stop); arm-gated - typed confirmation or --force + MTK_ALLOW_APP_STOP=1
 ```
 
 Deploying and keying the dashboard is per-operator: create your own
