@@ -91,8 +91,8 @@ def _repos_root() -> Path:
 
 
 # Package -> repo dir special cases (everything else is modal-<pkg>-server),
-# matching toolkit/secrets.py REPO_SPECIAL.
-_REPO_SPECIAL = {"finetune": "modal-finetune-server", "vault": "modal-vault-server"}
+# matching toolkit/secrets.py REPO_SPECIAL (imported here to keep one map).
+_REPO_SPECIAL = dict(mtk_secrets.REPO_SPECIAL)
 
 
 def _repo_dir(pkg: str) -> Path:

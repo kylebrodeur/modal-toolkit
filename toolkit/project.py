@@ -286,7 +286,8 @@ def llms_txt(slug: str, packages: list[str]) -> str:
     out = [
         f"# {slug}",
         "",
-        "> A Modal Toolkit project. Packages deploy with `mtk` from overlays in `deploys/`.",
+        "> A Modal Toolkit project. Packages deploy with `mtk` from overlays in `deploys/<pkg>-server/`,",
+        "> backed by tag-pinned vendor copies in `vendor/`.",
         "",
         "## Packages",
         "",
