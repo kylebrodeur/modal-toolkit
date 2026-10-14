@@ -24,12 +24,24 @@ from toolkit import cli
         (["init", "lab-one", "--agents"], cli.cmd_init),
         (["init", "--no-agents"], cli.cmd_init),
         (["pull", "vault"], cli.cmd_pull),
+        (["pull", "vault", "--tag", "v1.0.0"], cli.cmd_pull),
         (["deploy", "vault"], cli.cmd_deploy),
+        (["deploy", "vault", "--allow-local-changes"], cli.cmd_deploy),
     ],
 )
 def test_project_subcommand_routes_to_its_handler(argv, handler):
     args = cli.build_parser().parse_args(argv)
     assert args.func is handler
+
+
+def test_deploy_override_flag_is_explicit_and_off_by_default():
+    assert cli.build_parser().parse_args(["deploy", "vault"]).allow_local_changes is False
+    assert cli.build_parser().parse_args(["deploy", "vault", "--allow-local-changes"]).allow_local_changes is True
+
+
+def test_pull_carries_an_optional_tag():
+    assert cli.build_parser().parse_args(["pull", "vault"]).tag is None
+    assert cli.build_parser().parse_args(["pull", "vault", "--tag", "v1.0.0"]).tag == "v1.0.0"
 
 
 def test_agents_flags_map_to_explicit_values():

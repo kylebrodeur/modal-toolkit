@@ -42,6 +42,7 @@ import secrets
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -772,6 +773,16 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_pull(args: argparse.Namespace) -> int:
     """`mtk pull <pkg> [...]`: clone missing package repos into the repos root, record them."""
     project_root = Path.cwd()
+    if args.tag:
+        # Vendor model: a tag-pinned, read-only copy under vendor/.
+        mtk_project.check_prerequisites()
+        mtk_project.vendor_packages(
+            project_root,
+            list(args.packages),
+            tags={pkg: args.tag for pkg in args.packages},
+            confirm=_confirm_revendor,
+        )
+        return 0
     repos_root = cfg.repos_root()
     mtk_project.pull_packages(project_root, repos_root, list(args.packages))
     if (project_root / "llms.txt").exists():
@@ -791,6 +802,14 @@ def _confirm_secret(name: str) -> bool:
         return False
 
 
+def _confirm_revendor(question: str) -> bool:
+    """Ask before moving a vendored copy to a different release tag."""
+    try:
+        return input(f"{question}? [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
+
+
 def cmd_deploy(args: argparse.Namespace) -> int:
     """`mtk deploy <pkg>`: preflight the overlay, gate on secrets, then run its deploy.sh.
 
@@ -800,6 +819,24 @@ def cmd_deploy(args: argparse.Namespace) -> int:
     project_root = Path.cwd()
     mtk_project.check_prerequisites()
     overlay = mtk_project.check_overlay(project_root, args.pkg)
+
+    ok, findings = mtk_project.vendor_check(project_root, args.pkg)
+    if not ok and not args.allow_local_changes:
+        raise mtk_project.ProjectError(
+            f"vendor drift for {args.pkg!r}; deploy refused:\n  "
+            + "\n  ".join(findings)
+            + f"\n  Fix deploys/{args.pkg}-server/ or re-vendor, or pass --allow-local-changes to deploy anyway"
+        )
+    if not ok and args.allow_local_changes:
+        record_path = project_root / ".mtk" / "config.json"
+        record = json.loads(record_path.read_text())
+        entry = record.setdefault("packages", {}).setdefault(args.pkg, {})
+        overrides = entry.setdefault("overrides", [])
+        overrides.append({"files": findings, "at": datetime.now().isoformat(timespec="seconds")})
+        record_path.write_text(json.dumps(record, indent=2) + "\n")
+        print(f"WARNING: deploying {args.pkg!r} with local vendor changes (recorded):")
+        for f in findings:
+            print(f"  {f}")
 
     status = mtk_secrets.check_all([args.pkg]).get(args.pkg)
     missing = mtk_project.missing_secrets(status, args.pkg)
@@ -823,9 +860,16 @@ def build_parser() -> argparse.ArgumentParser:
     init_p.set_defaults(func=cmd_init)
     pull_p = sub.add_parser("pull", help="clone package repos into the repos root and record them in this project")
     pull_p.add_argument("packages", nargs="+", help="package names, e.g. vault embedding")
+    pull_p.add_argument("--tag", help="release tag to vendor at (required for a vendored pull), e.g. v1.2.0")
     pull_p.set_defaults(func=cmd_pull)
     deploy_p = sub.add_parser("deploy", help="deploy a package from this project's deploys/<pkg>/ overlay")
     deploy_p.add_argument("pkg", help="package name, e.g. vault")
+    deploy_p.add_argument(
+        "--allow-local-changes",
+        dest="allow_local_changes",
+        action="store_true",
+        help="deploy despite vendor drift; the drift is recorded in the project state",
+    )
     deploy_p.set_defaults(func=cmd_deploy)
 
     setup = sub.add_parser("setup", help="write the shared config (per-package sections)")

@@ -445,3 +445,53 @@ def vendor_packages(
     record_path.write_text(json.dumps(record, indent=2) + "\n")
     for pkg in wrote:
         print(f"vendored {pkg}: {vendor_dir(project_root, pkg)} at {tags[pkg]}")
+
+
+def vendor_check(
+    project_root: Path, pkg: str, git: Callable[[list[str]], tuple[int, str]] = _default_git
+) -> tuple[bool, list[str]]:
+    """Read-only drift check for a vendored package: (ok, findings).
+
+    A copy passes when its HEAD equals the recorded commit, the recorded tag
+    still resolves to that commit, and the worktree is clean. Findings name the
+    offending file or fact, and each one ends with where the change belongs:
+    deploys/<pkg>-server/ (config/hooks) or an upstream release (code).
+    """
+    dest = vendor_dir(project_root, pkg)
+    findings: list[str] = []
+    if not dest.is_dir() or not (dest / ".git").exists():
+        exists_note = "exists" if dest.exists() else "never vendored"
+        return False, [f"{exists_note} at {dest}; not a vendored git copy. Fix: run `mtk pull {pkg} --tag <release>`"]
+    meta_path = dest / VENDOR_META
+    if not meta_path.is_file():
+        return False, [f"{dest} has no {VENDOR_META} provenance; fix: run `mtk pull {pkg} --tag <release>`"]
+    meta = json.loads(meta_path.read_text())
+
+    rc, out = git(["git", "-C", str(dest), "status", "--porcelain", "--", ":!.mtk-vendor.json"])
+    if rc != 0:
+        return False, [f"git status failed in {dest}: {out}"]
+    if out.strip():
+        for line in out.strip().splitlines():
+            rel = line[3:].strip().strip('"')
+            findings.append(
+                f"vendored copy is modified: {rel} - vendor/ is not a scratch tree; "
+                f"changes belong in deploys/{pkg}-server/ (hooks, config) or in an upstream release"
+            )
+
+    rc, out = git(["git", "-C", str(dest), "rev-parse", "HEAD"])
+    if rc != 0:
+        return False, [f"git rev-parse failed in {dest}: {out}"]
+    head = out.strip()
+    if head != meta.get("commit", ""):
+        findings.append(
+            f"vendored HEAD {head[:12]} != provenance commit {meta.get('commit', '?')[:12]}; "
+            f"fix: re-vendor with `mtk pull {pkg} --tag {meta.get('tag', '?')}`"
+        )
+
+    rc, out = git(["git", "-C", str(dest), "describe", "--exact-match", "--tags", head])
+    exact = rc == 0 and out.strip() == meta.get("tag", "")
+    if not exact:
+        found = out.strip() if rc == 0 else "no exact tag"
+        findings.append(f"HEAD does not resolve exactly to tag {meta.get('tag', '?')!r} (got {found!r})")
+
+    return not findings, findings
