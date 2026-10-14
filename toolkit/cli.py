@@ -884,6 +884,7 @@ def cmd_skills(args: argparse.Namespace) -> int:
             pkg: {
                 "configured": _pkg_configured(project_root, pkg),
                 "deployed": bool(state.get("deployed")),
+                "seeded": bool(state.get("seeded")),
             }
             for pkg, state in record_pkgs.items()
         },

@@ -1,12 +1,12 @@
 ---
 name: mtk
-description: Use when setting up or operating a Modal Toolkit project with the mtk CLI: init, pull, deploy, doctor, secrets, and the per-package overlays under deploys/.
+description: Use when setting up or operating a Modal Toolkit project with the mtk CLI: init, pull, deploy, seed, skills, doctor, secrets, and the per-package overlays under deploys/.
 ---
 
 # mtk: the Modal Toolkit CLI
 
-`mtk` scaffolds a project, pulls the package repos, gates secrets, and deploys
-each package from the project's own overlay. Install with
+`mtk` scaffolds a project, vendors tag-pinned package copies, gates secrets,
+and deploys each package from the project's own overlay. Install with
 `uv tool install modal-toolkit` (needs uv, git, and the Modal CLI).
 
 ## Project flow
@@ -23,7 +23,11 @@ mtk doctor --pkg vault           # health and drift
 ## Rules
 
 - Deploy only through `deploys/<pkg>-server/` in the project. The overlay has a
-  `deploy.json` (app name `<project>-<pkg>`) and a `deploy.sh`.
+  `deploy.json` (app name `<project>-<pkg>`), a `deploy.sh`, and (for packages
+  with staged artifacts) a `seed.json`.
+- The vendored copy under `vendor/<pkg>-server/` is read-only: any drift refuses
+  a deploy. Customise from the overlay (config, env, hooks, seed.json), or pass
+  the explicit `--allow-local-changes`.
 - Never run `modal deploy` inside a package checkout.
 - `mtk deploy` lists missing secrets and asks before creating each one. Do not
   pass a secret value on the command line.
@@ -38,7 +42,8 @@ mtk doctor --pkg vault           # health and drift
 | Command | Use |
 | :--- | :--- |
 | `mtk init [<id>]` | Create a project record and `deploys/` |
-| `mtk pull <pkg> ...` | Clone package repos; existing checkouts are left alone |
+| `mtk pull <pkg> --tag <release>` | Vendor a tag-pinned copy into vendor/<pkg>-server/ |
+| `mtk seed <pkg>` | Stage pre-deploy artifacts (model weights) from the overlay's seed.json |
 | `mtk deploy <pkg>` | Deploy from the overlay after the preflight and secrets gate |
 | `mtk doctor [--pkg ...]` | Health and drift across packages |
 | `mtk status --no-net` | Config-only view per package |
@@ -47,6 +52,17 @@ mtk doctor --pkg vault           # health and drift
 | `mtk cost` | Always-on GPU-hour view |
 
 Package names: `vault`, `embedding`, `inference`, `vision`, `finetune`.
+
+## Skills
+
+Each server repo declares its own lifecycle skills in
+`server/mtk-skills.toml` (names `mtk-<pkg>-<stage>`; stages: `init-config`,
+`setup-hooks`, `build-deploy`, `develop`). `mtk skills` lists the skills that
+apply to this project right now, filtered by what is vendored, configured, and
+deployed; run it after `mtk init` and again before deploy work. When the
+suggestion names a skill, load its SKILL.md from the printed path before
+working on that package. Skills for packages this project has not vendored
+never appear, so an agent never reads facts about a server that is not in use.
 
 ## When something fails
 

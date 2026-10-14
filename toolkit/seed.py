@@ -111,6 +111,7 @@ def run(
                 )
             if key not in done:
                 done.append(key)
+    record.setdefault("packages", {}).setdefault(pkg, {})["seeded"] = done
 
     record_path.write_text(json.dumps(record, indent=2) + "\n")
     print(f"seeded {pkg}: {', '.join(k for k in done) or 'nothing new'}")

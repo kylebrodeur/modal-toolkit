@@ -460,7 +460,11 @@ def vendor_packages(
             "vendored": "detached checkout of the release tag",
         }
         (dest / VENDOR_META).write_text(json.dumps(meta, indent=2) + "\n")
-        record_packages[pkg] = {"vendor": f"{VENDOR_DIR}/{pkg}-server", "tag": tags[pkg]}
+        record_packages[pkg] = {
+            "vendor": f"{VENDOR_DIR}/{pkg}-server",
+            "tag": tags[pkg],
+            "seeded": record_packages.get(pkg, {}).get("seeded", []),
+        }
         wrote.append(pkg)
 
     record_path.write_text(json.dumps(record, indent=2) + "\n")
