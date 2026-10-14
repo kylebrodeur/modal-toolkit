@@ -52,6 +52,7 @@ from toolkit import config as cfg
 from toolkit import pkg_commands
 from toolkit import project as mtk_project
 from toolkit import secrets as mtk_secrets
+from toolkit import seed as mtk_seed
 from toolkit.secrets import ManifestSecret, ManifestSpec
 
 TIMEOUT_S = 20  # warm-path probe budget (a hot lane answers in milliseconds)
@@ -810,6 +811,19 @@ def _confirm_revendor(question: str) -> bool:
         return False
 
 
+def cmd_seed(args: argparse.Namespace) -> int:
+    """`mtk seed <pkg>`: run the deploys/<pkg>-server/seed.json catalog."""
+    project_root = Path.cwd()
+
+    def _shell(call: tuple) -> int:
+        argv, cwd, env = call
+        merged = {**os.environ, **env}
+        return subprocess.run(argv, cwd=str(cwd), env=merged, check=True).returncode
+
+    mtk_seed.run(project_root, args.pkg, force=args.force, runner=_shell)
+    return 0
+
+
 def cmd_deploy(args: argparse.Namespace) -> int:
     """`mtk deploy <pkg>`: preflight the overlay, gate on secrets, then run its deploy.sh.
 
@@ -871,6 +885,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="deploy despite vendor drift; the drift is recorded in the project state",
     )
     deploy_p.set_defaults(func=cmd_deploy)
+
+    seed_p = sub.add_parser(
+        "seed", help="stage pre-deploy artifacts (e.g. model weights) from deploys/<pkg>-server/seed.json"
+    )
+    seed_p.add_argument("pkg", help="package name, e.g. inference")
+    seed_p.add_argument("--force", action="store_true", help="re-run every seed unit, ignoring recorded completions")
+    seed_p.set_defaults(func=cmd_seed)
 
     setup = sub.add_parser("setup", help="write the shared config (per-package sections)")
     setup.add_argument(

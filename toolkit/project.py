@@ -25,6 +25,15 @@ SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 RECORD_DIR = ".mtk"
 RECORD_FILE = "config.json"
 
+
+def record_path_of(project_root: Path) -> Path:
+    """The project record path; raises when this is not a project."""
+    path = Path(project_root) / RECORD_DIR / RECORD_FILE
+    if not path.is_file():
+        raise ProjectError(f"{project_root} is not a project. Fix: run `mtk init` here first")
+    return path
+
+
 Runner = Callable[[list[str]], tuple[int, str]]
 
 
@@ -196,19 +205,30 @@ def _project_slug(project_root: Path) -> str:
     return json.loads(record_path.read_text())["slug"]
 
 
+def overlay_dir(project_root: Path, pkg: str) -> Path:
+    """The overlay dir for a package: deploys/<pkg>-server/.
+
+    One layout, one model (decided 2026-10-14): the overlay dir name matches
+    the vendor dir name (vendor/<pkg>-server/). Config, seed.json, hooks, and
+    state live here; code never does.
+    """
+    return project_root / "deploys" / f"{pkg}-server"
+
+
 def check_overlay(project_root: Path, pkg: str) -> Path:
-    """Preflight the deploy overlay deploys/<pkg>/ and return its path.
+    """Preflight the deploy overlay for a package and return its path.
 
     Refuses a missing overlay, a missing deploy.sh or deploy.json, and any
     deploy.json whose app_name is not the composed <slug>-<pkg>.
     """
-    overlay = project_root / "deploys" / pkg
+    overlay = overlay_dir(project_root, pkg)
+    shown = overlay.relative_to(project_root) if overlay.is_relative_to(project_root) else overlay
     if not overlay.is_dir():
-        raise ProjectError(f"no overlay at deploys/{pkg}/. Fix: create it with deploy.json and deploy.sh")
+        raise ProjectError(f"no overlay at {shown}/. Fix: create it with deploy.json and deploy.sh")
     if not (overlay / "deploy.json").is_file():
-        raise ProjectError(f"deploys/{pkg}/ has no deploy.json. Fix: add one that names the app")
+        raise ProjectError(f"{shown}/ has no deploy.json. Fix: add one that names the app")
     if not (overlay / "deploy.sh").is_file():
-        raise ProjectError(f"deploys/{pkg}/ has no deploy.sh. Fix: add the deploy entry point")
+        raise ProjectError(f"{shown}/ has no deploy.sh. Fix: add the deploy entry point")
 
     expected = f"{_project_slug(project_root)}-{pkg}"
     data = json.loads((overlay / "deploy.json").read_text())

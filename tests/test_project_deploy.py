@@ -1,7 +1,7 @@
 """`mtk deploy <pkg>`: provenance preflight, app-name check, and secrets gate.
 
 Contract, enforced before any account-touching step:
-- the overlay deploys/<pkg>/ exists and holds deploy.json + deploy.sh;
+- the overlay deploys/<pkg>-server/ exists and holds deploy.json + deploy.sh;
 - deploy.json names the app <slug>-<pkg> (composed, never bare);
 - missing secrets are created only after every one is confirmed.
 Account and subprocess calls are injected, so tests never touch Modal.
@@ -21,7 +21,7 @@ from toolkit import project
 
 
 def _overlay(root: Path, pkg: str, app_name: str | None) -> Path:
-    overlay = root / "deploys" / pkg
+    overlay = root / "deploys" / f"{pkg}-server"
     overlay.mkdir(parents=True)
     body: dict = {"pkg": pkg}
     if app_name is not None:
@@ -41,7 +41,7 @@ def project_root(tmp_path):
 
 class TestOverlayProvenance:
     def test_missing_overlay_refuses(self, project_root):
-        with pytest.raises(project.ProjectError, match="deploys/vault"):
+        with pytest.raises(project.ProjectError, match="deploys/vault-server"):
             project.check_overlay(project_root, "vault")
 
     def test_overlay_without_deploy_sh_refuses(self, project_root):
@@ -71,7 +71,7 @@ class TestAppNameIsComposed:
     def test_composed_name_passes(self, project_root):
         _overlay(project_root, "vault", "writing-lab-vault")
         overlay = project.check_overlay(project_root, "vault")
-        assert overlay == project_root / "deploys" / "vault"
+        assert overlay == project_root / "deploys" / "vault-server"
 
 
 class TestSecretsGate:
