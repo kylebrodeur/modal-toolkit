@@ -1,8 +1,6 @@
 ---
 name: mtk-cli-upgrade
-description: The operator CLI's upgrade + usage discipline: tag upgrades, vendored-module parity, and the fleet commands (doctor/secrets/dashboard/metrics/libs).
-
-Use when upgrading the modal-toolkit checkout, running mtk fleet commands, or wiring shared modules into packages.
+description: Use when upgrading the modal-toolkit checkout, running mtk fleet commands (doctor, secrets, dashboard, metrics, libs), or wiring shared modules into packages.
 license: Apache-2.0
 metadata:
   author: kylebrodeur
@@ -10,30 +8,37 @@ metadata:
   repo: modal-toolkit
 ---
 
-# toolkit (mtk): upgrade + fleet discipline
+# mtk: upgrade and fleet discipline
+
+## Upgrade by tag, then verify
 
 ```bash
-# 0. provenance preflight for deploys (from the system workspace):
-tools/guards/deploy-provenance.sh <overlay-dir>
-
-# 1. upgrade by tag + verify
-git fetch --tags && git checkout <tag>   # v1.4.1 = current
-uv run pytest tests -q                   # 103 must pass
+git fetch --tags && git checkout <tag>        # upgrade unit is the tag, never a branch
+uv run pytest tests -q                        # must pass before you use the new tag
 uv run ruff check . && uv run ruff format --check .
-mtk libs check                           # six-repo vendored parity
+mtk libs check                                # vendored shared-module parity
 ```
 
-Fleet commands quick map (deep help: this repo's README + docs/RUNBOOK.md):
+## Deploy rules
 
-- state: `mtk doctor`, `mtk flow`, `mtk cost`
-- power: `mtk warm --all` / `mtk shutdown --all`
-- secrets: `mtk secrets check|create|rotate` (rotate invalidates live
-  users - ask first)
-- observe: `mtk dashboard deploy|stop`, `mtk metrics url|test`
-- shared modules: `mtk libs sync|check` (`check` = the CI gate that
-  keeps vendored copies byte-identical; `sync` restores)
+- Deploys go through a project overlay: `deploys/<pkg>/` with a `deploy.json`
+  (app name `<project>-<pkg>`) and a `deploy.sh`. Run `mtk deploy <pkg>`.
+- Never run `modal deploy` inside a package or toolkit checkout. Checkouts are source.
+- The provenance preflight refuses a plain checkout:
+  `tools/guards/deploy-provenance.sh <overlay-dir>` (from the system workspace).
 
-Deploy rule: even the toolkit repo is source, not a target - the ONE
-fleet deploy surface = `mtk dashboard deploy` (the dashboard CPU app),
-which is Kyle-run; lanes use their own overlay dirs for the GPU
-packages.
+## Fleet commands
+
+- State: `mtk doctor`, `mtk flow`, `mtk cost`
+- Power: `mtk warm --all`, `mtk shutdown --all`. A vision stop is an undeploy and asks first.
+- Secrets: `mtk secrets check | create | rotate`. Rotation invalidates live
+  deployments, so ask before running it.
+- Observe: `mtk dashboard deploy | stop | logs | url`, `mtk metrics url | test`
+- Shared modules: `mtk libs sync | check`. `check` is the CI gate that keeps
+  vendored copies byte-identical. `sync` restores them.
+
+## Agent files
+
+`mtk init` asks whether to add `AGENTS.md` and `llms.txt`. An existing
+`AGENTS.md` is changed only inside the `<!-- mtk:begin -->` and
+`<!-- mtk:end -->` markers.
