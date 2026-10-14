@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -313,3 +315,133 @@ def install_agent_files(root: Path, slug: str, packages: list[str]) -> None:
         if new != text:
             agents_path.write_text(new)
     (root / "llms.txt").write_text(llms_txt(slug, packages))
+
+
+# ── vendor model ────────────────────────────────────────────────────────────
+VENDOR_DIR = "vendor"
+VENDOR_META = ".mtk-vendor.json"
+
+
+def vendor_dir(project_root: Path, pkg: str) -> Path:
+    """vendor/<upstream-repo-name>/ inside the project, keyed by the repo name."""
+    return project_root / VENDOR_DIR / REPO_NAMES[pkg]
+
+
+def _tag_head(git: Callable[[list[str]], tuple[int, str]], repo: Path, tag: str) -> str | None:
+    """The commit a tag names, or None when the tag does not resolve."""
+    rc, out = git(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", f"{tag}^{{commit}}"])
+    return out.strip() if rc == 0 and out.strip() else None
+
+
+def vendor_packages(
+    project_root: Path,
+    pkgs: list[str],
+    *,
+    tags: dict[str, str],
+    url_for: Callable[[str], str | None] = repo_url,
+    git: Callable[[list[str]], tuple[int, str]] = _default_git,
+    confirm: Callable[[str], bool] = lambda _q: False,
+) -> None:
+    """Vendor each package into vendor/<repo-name>/ as a checkout pinned to an exact tag.
+
+    Refusals happen before any write: unknown package, unknown tag,
+    provenance missing for a package. Re-vendoring an existing vendor dir is a
+    decision, so it needs confirm=True; the default refuses.
+    """
+    unknown = [pkg for pkg in pkgs if pkg not in REPO_NAMES]
+    if unknown:
+        raise ProjectError(f"unknown package {unknown[0]!r}; known packages: {', '.join(REPO_NAMES)}")
+    missing_tags = [pkg for pkg in pkgs if not tags.get(pkg, "").strip()]
+    if missing_tags:
+        raise ProjectError(
+            f"missing provenance (release tag) for: {', '.join(missing_tags)}. "
+            "Pass --tag per package so every vendor copy is pinned and guarded."
+        )
+
+    record_path = project_root / RECORD_DIR / RECORD_FILE
+    if not record_path.is_file():
+        raise ProjectError(f"{project_root} is not a project. Fix: run `mtk init` here first")
+    record = json.loads(record_path.read_text())
+    record_packages = record.setdefault("packages", {})
+
+    # Resolve every tag first, so nothing is written on a bad tag.
+    planned: list[tuple[str, str, str, str]] = []  # (pkg, url/None, dest, commit)
+    for pkg in pkgs:
+        url = url_for(pkg)
+        dest = vendor_dir(project_root, pkg)
+        commit = _tag_head(git, dest, tags[pkg])
+        if commit is None and not dest.exists() and url is None:
+            raise ProjectError(f"cannot resolve tag {tags[pkg]!r} for {pkg!r}: no source to fetch from")
+        planned.append((pkg, url, dest, commit or ""))
+
+    confirmations: list[tuple[str, Path, str]] = []
+    for pkg, _url, dest, _commit in planned:
+        existing_meta = dest / VENDOR_META if dest.exists() else None
+        if existing_meta is None or not existing_meta.is_file():
+            continue
+        current = json.loads(existing_meta.read_text()).get("tag", "?")
+        if current != tags[pkg]:
+            if not confirm(f"re-vendor {pkg} from {current} to {tags[pkg]}"):
+                raise ProjectError(
+                    f"{pkg!r} is vendored at {current!r}; refusing to move it to {tags[pkg]!r} without confirmation"
+                )
+            confirmations.append((pkg, dest, tags[pkg]))
+
+    for _pkg, dest, _tag in confirmations:
+        # Re-vendor = clean replace, so the new pin is the only copy.
+        git(["git", "-C", str(dest.parent), "rm", "-r", "-q", "-f", dest.name])
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Resolve every tag BEFORE any write into vendor/: clone missing sources
+    # into a temp dir, verify each tag, and only then move into place.
+    staged: dict[str, Path] = {}
+    for pkg, url, dest, _commit in planned:
+        if dest.exists():
+            if _tag_head(git, dest, tags[pkg]) is None:
+                rc, out = git(["git", "-C", str(dest), "fetch", "--quiet", "origin"])
+                if rc != 0:
+                    raise ProjectError(f"git fetch failed for {pkg!r}: {out}")
+            if _tag_head(git, dest, tags[pkg]) is None:
+                raise ProjectError(f"tag {tags[pkg]!r} not found for {pkg!r} after fetch")
+        else:
+            if url is None:
+                raise ProjectError(f"cannot resolve tag {tags[pkg]!r} for {pkg!r}: no source to fetch from")
+            tmp_root = Path(tempfile.mkdtemp(prefix="mtk-vendor-"))
+            rc, out = git(["git", "clone", "--quiet", url, str(tmp_root / "r")])
+            if rc != 0:
+                shutil.rmtree(tmp_root, ignore_errors=True)
+                raise ProjectError(f"git clone failed for {pkg!r}: {out}")
+            if _tag_head(git, tmp_root / "r", tags[pkg]) is None:
+                shutil.rmtree(tmp_root, ignore_errors=True)
+                raise ProjectError(f"tag {tags[pkg]!r} not found upstream for {pkg!r}")
+            staged[pkg] = tmp_root / "r"
+
+    # Every tag resolves. Any prior vendor dir with a different pin is already
+    # confirmed; a same-tag re-run just re-checkouts (idempotent).
+    wrote: list[str] = []
+    for pkg, _url, dest, _commit in planned:
+        staged_repo = staged.pop(pkg, None)
+        if staged_repo is not None:
+            if dest.exists():
+                shutil.rmtree(dest)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(staged_repo), str(dest))
+        head = _tag_head(git, dest, tags[pkg])
+        if head is None:
+            raise ProjectError(f"tag {tags[pkg]!r} went missing for {pkg!r} before checkout")
+        rc, out = git(["git", "-C", str(dest), "checkout", "--quiet", "--detach", head])
+        if rc != 0:
+            raise ProjectError(f"detaching at {tags[pkg]!r} failed for {pkg!r}: {out}")
+        meta = {
+            "repo": REPO_NAMES[pkg],
+            "tag": tags[pkg],
+            "commit": head,
+            "vendored": "detached checkout of the release tag",
+        }
+        (dest / VENDOR_META).write_text(json.dumps(meta, indent=2) + "\n")
+        record_packages[pkg] = {"vendor": str(dest), "tag": tags[pkg]}
+        wrote.append(pkg)
+
+    record_path.write_text(json.dumps(record, indent=2) + "\n")
+    for pkg in wrote:
+        print(f"vendored {pkg}: {vendor_dir(project_root, pkg)} at {tags[pkg]}")
