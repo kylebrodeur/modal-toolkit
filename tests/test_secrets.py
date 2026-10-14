@@ -314,9 +314,10 @@ def test_check_all_one_shim_call_regardless_of_package_count(
         _spec(tmp_path, repo_dir=f"modal-{pkg}-server")
     # `coding` maps to the special-case repo (modal-coding-inference, not
     # modal-coding-server): it reports manifest-absent (which is honest for a
-    # bare tmp_path fixture) but must still KEY into the result set.
+    # bare tmp_path fixture) but must still KEY into the result set; same for
+    # `vm` (modal-victoriametrics-server, the metrics-store special case).
     out = mtk_secrets.check_all()
-    assert set(out) == {"embedding", "inference", "vision", "finetune", "vault", "coding"}
+    assert set(out) == {"embedding", "inference", "vision", "finetune", "vault", "vm", "coding"}
     lines = [ln for ln in log_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert len([ln for ln in lines if "list" in ln and "--json" in ln]) == 1
 

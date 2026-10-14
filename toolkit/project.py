@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 # The family packages. A project's apps compose as <slug>-<pkg>.
-FAMILY_PACKAGES = ("embedding", "inference", "vision", "finetune", "vault")
+FAMILY_PACKAGES = ("embedding", "inference", "vision", "finetune", "vault", "vm")
 
 # Modal app names: lowercase letters, digits, dashes; start with a letter or digit.
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -161,6 +161,7 @@ REPO_NAMES: dict[str, str] = {
     "vision": "modal-vision-server",
     "finetune": "modal-finetune-server",
     "vault": "modal-vault-server",
+    "vm": "modal-victoriametrics-server",
 }
 REPO_OWNER = "kylebrodeur"
 

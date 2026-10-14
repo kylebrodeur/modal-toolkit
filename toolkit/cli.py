@@ -62,7 +62,7 @@ COLD_TIMEOUT_S = 120  # one retry for a scale-to-zero cold boot (image hydrate +
 # The packages, in dependency order (embedding first; coding = the mci
 # private fleet core, joined 2026-10-06 with its secrets manifest; vault =
 # modal-vault-server, secrets-only until it gets a config surface).
-PACKAGE_ORDER = ("embedding", "inference", "vision", "finetune", "coding", "vault")
+PACKAGE_ORDER = ("embedding", "inference", "vision", "finetune", "coding", "vault", "vm")
 
 # Health paths (mirrors what each server exposes).
 HEALTH: dict[str, str] = {
@@ -73,6 +73,9 @@ HEALTH: dict[str, str] = {
     "finetune": "",
     # Vault serves a public /health (vault + sync triage); /mcp + /admin/* stay bearer-gated.
     "vault": "/health",
+    # VM gates EVERY endpoint behind Basic Auth (no public health): the probe
+    # rides the authed /health path that the binary itself still serves.
+    "vm": "/health",
 }
 
 # GPU hourly rates used by `mtk cost` when computing always-on burn.

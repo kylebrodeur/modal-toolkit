@@ -28,7 +28,7 @@ from typing import Any
 
 CONFIG_PATH_DEFAULT = Path.home() / ".config" / "modal-toolkit" / "config.json"
 
-PACKAGES = ("embedding", "inference", "vision", "finetune", "vault")
+PACKAGES = ("embedding", "inference", "vision", "finetune", "vault", "vm")
 
 # The provider name a client harness (Pi/OMP) uses to address the inference
 # lane. Configurable so different operators can namespace it differently
@@ -61,6 +61,9 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "coding": ("base_url", "token", "alias"),
     # vault = modal-vault-server: scale-to-zero CPU app; health is public.
     "vault": ("base_url", "token"),
+    # vm = modal-victoriametrics-server: the metrics store; every endpoint is
+    # Basic-Auth-gated by the binary (url + auth pair, no public health).
+    "vm": ("base_url", "auth"),
 }
 
 # Environment variables that override file config, per package. Keys inside the
@@ -99,6 +102,10 @@ ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "base_url": "MODAL_VAULT_BASE_URL",
         "token": "MODAL_VAULT_TOKEN",
     },
+    "vm": {
+        "base_url": "MODAL_TOOLKIT_VM_URL",
+        "auth": "MODAL_TOOLKIT_VM_AUTH",
+    },
 }
 
 # Per-package enabled semantics: a section is "enabled" when its required
@@ -111,6 +118,7 @@ ENABLED_OVERRIDES_ENV: dict[str, str] = {
     "vision": "MODAL_VISION_ENABLED",
     "finetune": "MODAL_FINETUNE_ENABLED",
     "vault": "MODAL_VAULT_ENABLED",
+    "vm": "MODAL_TOOLKIT_VM_ENABLED",
 }
 
 
@@ -139,6 +147,7 @@ REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "inference": ("base_url", "token", "alias"),
     "vision": ("base_url", "token"),
     "vault": ("base_url", "token"),
+    "vm": ("base_url", "auth"),
     # finetune/coding: command-specific; no single required trio
 }
 

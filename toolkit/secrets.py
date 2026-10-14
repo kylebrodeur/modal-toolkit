@@ -48,7 +48,7 @@ from toolkit import project as mtk_project
 MODAL_ARGV = ["uvx", "modal"]
 
 # The packages whose repos ship manifests, in doctor order.
-PACKAGES = ("embedding", "inference", "vision", "finetune", "vault", "coding")
+PACKAGES = ("embedding", "inference", "vision", "finetune", "vault", "vm", "coding")
 
 # Repo-name special cases (pkg -> dir under the repos root). Everything else is
 # the plain modal-<pkg>-server pattern. `coding` = modal-coding-inference (the
@@ -56,6 +56,7 @@ PACKAGES = ("embedding", "inference", "vision", "finetune", "vault", "coding")
 REPO_SPECIAL = {
     "finetune": "modal-finetune-server",
     "vault": "modal-vault-server",
+    "vm": "modal-victoriametrics-server",
     "coding": "modal-coding-inference",
 }
 
