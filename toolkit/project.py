@@ -161,43 +161,6 @@ def _default_git(argv: list[str]) -> tuple[int, str]:
     return result.returncode, (result.stdout + result.stderr).strip()
 
 
-def pull_packages(
-    project_root: Path,
-    repos_root: Path,
-    pkgs: list[str],
-    *,
-    url_for: Callable[[str], str | None] = repo_url,
-    run: Callable[[list[str]], tuple[int, str]] = _default_git,
-) -> None:
-    """Clone each missing package repo into `repos_root` and record it in the project.
-
-    A present checkout is left alone: no fetch, no reset, no writes into it.
-    Unknown names are refused before any clone runs. The record is written only
-    after every clone succeeds.
-    """
-    unknown = [pkg for pkg in pkgs if pkg not in REPO_NAMES]
-    if unknown:
-        raise ProjectError(f"unknown package {unknown[0]!r}; known packages: {', '.join(REPO_NAMES)}")
-
-    record_path = project_root / RECORD_DIR / RECORD_FILE
-    if not record_path.is_file():
-        raise ProjectError(f"{project_root} is not a project. Fix: run `mtk init` here first")
-    record = json.loads(record_path.read_text())
-
-    for pkg in pkgs:
-        dest = repos_root / REPO_NAMES[pkg]
-        if not dest.exists():
-            url = url_for(pkg)
-            if url is None:
-                raise ProjectError(f"no repo URL for package {pkg!r}")
-            rc, output = run(["git", "clone", "--quiet", url, str(dest)])
-            if rc != 0:
-                raise ProjectError(f"git clone failed for {pkg!r}: {output}")
-        record.setdefault("packages", {})[pkg] = {"path": str(dest)}
-
-    record_path.write_text(json.dumps(record, indent=2) + "\n")
-
-
 def _project_slug(project_root: Path) -> str:
     record_path = project_root / RECORD_DIR / RECORD_FILE
     if not record_path.is_file():

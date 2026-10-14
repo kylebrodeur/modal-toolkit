@@ -358,8 +358,16 @@ def _pkg_for_repo(repo_path: Path) -> str:
 
 
 def _pkg_repo(pkg: str) -> Path:
-    """Repo path for a package id (vault and finetune map to their long names)."""
+    """Repo path for a package id (vault and finetune map to their long names).
+
+    One model (2026-10-14): inside a project, the vendored copy under
+    vendor/ IS the source (it carries server/secrets.toml). Outside a
+    project, the shared repos root remains the discovery path.
+    """
     repo_name = REPO_SPECIAL.get(pkg, f"modal-{pkg}-server")
+    vendored = Path.cwd() / "vendor" / repo_name
+    if (vendored / "server" / "secrets.toml").is_file():
+        return vendored
     return cfg.repos_root() / repo_name
 
 

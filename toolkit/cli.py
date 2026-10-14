@@ -96,8 +96,19 @@ _REPO_SPECIAL = {"finetune": "modal-finetune-server", "vault": "modal-vault-serv
 
 
 def _repo_dir(pkg: str) -> Path:
-    """The repo path for a package WITHOUT existence checks (mount-time discovery)."""
-    return _repos_root() / _REPO_SPECIAL.get(pkg, f"modal-{pkg}-server")
+    """The package's repo path WITHOUT existence checks.
+
+    One model (2026-10-14): a project vendors its packages under vendor/,
+    so inside a project the vendored copy IS the package source. Outside a
+    project (fleet-level commands like secrets create --all), the shared
+    repos root from config remains the discovery path.
+    """
+    name = _REPO_SPECIAL.get(pkg, f"modal-{pkg}-server")
+    cwd = Path.cwd()
+    vendored = cwd / "vendor" / name
+    if (vendored / ".git").exists():
+        return vendored
+    return _repos_root() / name
 
 
 def _pkg_repo(pkg: str) -> Path:
@@ -772,25 +783,29 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_pull(args: argparse.Namespace) -> int:
-    """`mtk pull <pkg> [...]`: clone missing package repos into the repos root, record them."""
+    """`mtk pull <pkg> --tag <release>`: vendor a tag-pinned copy into this project.
+
+    The vendor model is the only model (decided 2026-10-14): the copy lives
+    under vendor/<pkg>-server/, is a detached checkout of the exact release
+    tag, and is guarded by vendor_check on every deploy and seed.
+    """
     project_root = Path.cwd()
-    if args.tag:
-        # Vendor model: a tag-pinned, read-only copy under vendor/.
-        mtk_project.check_prerequisites()
-        mtk_project.vendor_packages(
-            project_root,
-            list(args.packages),
-            tags={pkg: args.tag for pkg in args.packages},
-            confirm=_confirm_revendor,
+    if not args.tag:
+        raise SystemExit(
+            "mtk pull requires --tag <release>. Fix: pick the release tag to vendor, e.g. `mtk pull vault --tag v1.2.2`"
         )
-        return 0
-    repos_root = cfg.repos_root()
-    mtk_project.pull_packages(project_root, repos_root, list(args.packages))
+    mtk_project.check_prerequisites()
+    mtk_project.vendor_packages(
+        project_root,
+        list(args.packages),
+        tags={pkg: args.tag for pkg in args.packages},
+        confirm=_confirm_revendor,
+    )
     if (project_root / "llms.txt").exists():
         record = json.loads((project_root / ".mtk" / "config.json").read_text())
         mtk_project.install_agent_files(project_root, record["slug"], list(record["packages"]))
     for pkg in args.packages:
-        print(f"pulled {pkg}: {repos_root / mtk_project.REPO_NAMES[pkg]}")
+        print(f"pulled {pkg}: {mtk_project.vendor_dir(project_root, pkg)} at {args.tag}")
     return 0
 
 
