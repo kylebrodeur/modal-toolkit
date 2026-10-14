@@ -42,6 +42,22 @@ ENV_URL = "MODAL_TOOLKIT_VM_URL"
 ENV_AUTH = "MODAL_TOOLKIT_VM_AUTH"  # optional "user:password" for HTTP Basic Auth
 DEFAULT_URL = "http://localhost:8428"
 
+# Env-name prefix override for VENDORED copies that live in another project's
+# namespace (e.g. the session coordinator's MODAL_SESSION_VM_URL). Set before
+# the first read; both env names derive from it.
+_env_prefix_override: str | None = None
+
+
+def _env_url() -> str:
+    prefix = _env_prefix_override or "MODAL_TOOLKIT"
+    return f"{prefix}_VM_URL"
+
+
+def _env_auth() -> str:
+    prefix = _env_prefix_override or "MODAL_TOOLKIT"
+    return f"{prefix}_VM_AUTH"
+
+
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -73,9 +89,10 @@ def line_protocol(measurement: str, value: float, tags: dict[str, str] | None = 
 
 def effective_url() -> tuple[str, str]:
     """The VM URL in effect + where it came from (``env MODAL_TOOLKIT_VM_URL`` or ``default``)."""
-    env = os.environ.get(ENV_URL)
+    url_env = _env_url()
+    env = os.environ.get(url_env)
     if env:
-        return env.rstrip("/"), f"env {ENV_URL}"
+        return env.rstrip("/"), f"env {url_env}"
     return DEFAULT_URL, "default"
 
 
@@ -95,12 +112,12 @@ class VMWriter:
         timeout: float = 5.0,
         auth: str | None = None,
     ) -> None:
-        resolved = (url or os.environ.get(ENV_URL) or DEFAULT_URL).rstrip("/")
+        resolved = (url or os.environ.get(_env_url()) or DEFAULT_URL).rstrip("/")
         self.url = resolved
         self.org = org
         self.bucket = bucket
         self.timeout = timeout
-        self._auth = auth if auth is not None else os.environ.get(ENV_AUTH)
+        self._auth = auth if auth is not None else os.environ.get(_env_auth())
 
     @property
     def endpoint(self) -> str:
@@ -139,6 +156,15 @@ class VMWriter:
 
 
 _writer: VMWriter | None = None
+
+
+def configure_env_prefix(prefix: str) -> None:
+    """Vendors set this once at import (before any write): their env names
+    derive from the prefix instead of MODAL_TOOLKIT_."""
+    global _env_prefix_override, _writer
+    if _env_prefix_override != prefix:
+        _env_prefix_override = prefix
+        _writer = None  # the singleton re-reads env under the new prefix
 
 
 def write_metric(measurement: str, value: float, tags: dict[str, str] | None = None, ts: int | None = None) -> bool:

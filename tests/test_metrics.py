@@ -237,3 +237,20 @@ def test_line_body_carrying_fieldset_shape(vm_server) -> None:
     metrics.VMWriter(url=url).write("probe,actor=t", 5)  # type: ignore[arg-type]  # (value 5, tags None)
     body = captured[-1][1].decode()
     assert body.endswith("value=5") or " value=" in body
+
+
+def test_configure_env_prefix_renames_both_envs(vm_server) -> None:
+    """Vendored copies (e.g. a session coordinator) set their own env prefix
+    once at import; URL + auth env names derive from it."""
+    url, captured = vm_server
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("MODAL_SESSION_VM_URL", url)
+        mp.setenv("MODAL_SESSION_VM_AUTH", "s:p")
+        metrics.configure_env_prefix("MODAL_SESSION")
+        try:
+            assert metrics.effective_url() == (url, "env MODAL_SESSION_VM_URL")
+            metrics.write_metric("session_probe", 1)
+            body = captured[-1][1].decode()
+            assert "value=1" in body
+        finally:
+            metrics.configure_env_prefix("MODAL_TOOLKIT")
