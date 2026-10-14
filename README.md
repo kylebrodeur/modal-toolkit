@@ -111,19 +111,27 @@ keeps runtime tuning, catalog, and slot telemetry).
 
 ## Quick Start
 
+Install from PyPI (needs [uv](https://docs.astral.sh/uv/) and git; the Modal CLI is
+needed for deploys: `uv tool install modal` then `modal setup`):
+
 ```bash
-uv sync --group dev
-
-# 1. Set up the shared config (per-package URL/token/defaults)
-mtk setup --repos-root /path/to/your/repos-dir
-# (or import an existing config: mtk setup --from-env)
-
-# 2. Inspect
-mtk config
-
-# 3. Health across the fleet
-mtk doctor
+uv tool install modal-toolkit      # or: uvx --from modal-toolkit mtk --help
 ```
+
+Then set up once, create a project, and deploy a package from it:
+
+```bash
+mtk setup --repos-root ~/repos     # shared config; token entered at the prompt
+mtk init my-project                # scaffold a project; checks prerequisites and your account
+cd my-project
+mtk pull vault                     # clone the package repo into ~/repos
+mtk deploy vault                   # preflight the overlay, confirm secrets, deploy
+mtk doctor                         # health across the fleet
+```
+
+The full walkthrough, including the overlay file format, is in
+[docs/quickstart.md](docs/quickstart.md). Each server has its own quickstart and
+how-to, linked from the packages list above.
 
 ## Configuration
 
