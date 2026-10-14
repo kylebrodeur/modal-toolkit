@@ -30,19 +30,31 @@ this costing me idle?", "stop everything".
 ## 1. Install (one-time)
 
 ```bash
-git clone https://github.com/kylebrodeur/modal-toolkit.git  # this repo
-cd modal-toolkit
-uv sync --group dev
-
-# The package repos must live in one parent dir for shelling-out to work.
-# If they are elsewhere, set $MODAL_TOOLKIT_REPOS.
-export MODAL_TOOLKIT_REPOS=/path/to/your/repos-dir
-
-mtk setup
+uv tool install modal-toolkit      # or: git clone + uv sync --group dev
+mtk setup                          # writes ~/.config/modal-toolkit/config.json (mode 600)
 ```
 
-`mtk setup` writes `~/.config/modal-toolkit/config.json` (mode 600). You can
-edit it directly, or import an existing local config with `mtk setup --from-env`.
+You can also import an existing local config with `mtk setup --from-env`.
+
+## 1b. Projects (the vendor model)
+
+Per-package work happens in a PROJECT: `vendor/` holds a tag-pinned copy of
+each package's code; `deploys/` holds the overlay (config, env, secrets
+names, seed.json, hooks). Inside a project, `mtk` reads the vendored copy
+automatically.
+
+```bash
+mtk init <project-id>              # scaffold; read-only against Modal
+cd <project-id>
+mtk pull vault --tag v1.5.0        # vendor a release-tag-pinned copy
+mtk seed inference                 # stage weights declared by deploys/<pkg>-server/seed.json
+mtk deploy vault                   # preflight + drift check + secrets gate + deploy.sh
+mtk skills                         # the lifecycle skills this project can use
+```
+
+The repos-root env (`$MODAL_TOOLKIT_REPOS`) matters only for fleet-level
+commands run OUTSIDE a project (e.g. `secrets create --all` across the
+family): the package repos live as siblings under one parent dir.
 
 ## 2. Daily state checks
 
@@ -163,9 +175,10 @@ broken lane hook never takes down the host.
 | `mtk doctor` reports `unhealthy` for a package | The URL is reachable but not 200: check the package's own auth token and that the deployed alias matches the config. |
 | `mtk flow` shows everything cold | Normal posture after `mtk shutdown --all`. Warm what you need. |
 | `~/.config/mci/config.json` (local config from another toolkit) | `mtk setup --from-env` imports it. The toolkit config stays at `~/.config/modal-toolkit/config.json`. |
-| Repo not found at `<workspace>/<pkg>` | The package repos are siblings of this checkout. Set `$MODAL_TOOLKIT_REPOS` or edit `repos.root` in the config. |
-| `mtk status`/`mtk doctor` report `cold` for a package | The lane answered slowly or not within the warm budget: almost always a scale-to-zero boot, not an outage. Re-run (one warm/retry cycle usually lands) or `mtk warm --pkg <name>`. |
-| `mtk status`/`mtk doctor` report `unreachable` for a package | The URL itself failed (connection/DNS error, not a timeout): check the config's `base_url`, the deployed app, and the network. |
+| Repo not found at `<workspace>/<pkg>` (fleet-level commands, outside a project) | The shared repos root is a fleet-level fallback only. For per-project work vendor the package instead: `mtk pull <pkg> --tag <release>` in the project. Inside a project, `mtk` reads the vendored copy automatically. |
+| `mtk deploy` refuses with "vendor drift for ..." | A file under `vendor/<pkg>-server/` was edited (the refusal names it). vendor/ is read-only: move the change into the overlay (`deploys/<pkg>-server/`: deploy.json env knobs, seed.json, hooks) or take it upstream, then re-vendor if the copy is broken: `mtk pull <pkg> --tag <same tag>`. |
+| `mtk deploy` refuses with "app_name must be ... " | The overlay's `deploy.json` must name the app `<project>-<pkg>` (top-level `app_name`), or carry `instance.app_name` for the fixed-name lane-instance exception; top-level and instance names must agree when both are present. |
+| `mtk skills` says a package "declares no skills" | The vendored release predates the skill manifests. Manifests ship with the package's next release; upgrade the pin, or use the package's docs directly meanwhile. |
 | Vision boots, then 500s on `/v1/identify` with "unknown encoder backend" or "unknown fast gate kind" | The model card carries an unsupported value. Fix the card JSON, or revert the single-line env override (`MODAL_VISION_*`) and let the card win. |
 | Vision classifies wrong after a model swap | The prompt template and similarity/reference constants are model-specific: copy them from the model card you switched *from*, then re-calibrate. See `registry/README.md` in the vision repo. |
 
