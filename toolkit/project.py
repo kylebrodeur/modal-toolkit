@@ -450,16 +450,24 @@ def vendor_check(
         return False, [f"{dest} has no {VENDOR_META} provenance; fix: run `mtk pull {pkg} --tag <release>`"]
     meta = json.loads(meta_path.read_text())
 
-    rc, out = git(["git", "-C", str(dest), "status", "--porcelain", "--", ":!.mtk-vendor.json"])
+    rc, out = git(["git", "-C", str(dest), "status", "--porcelain", "-uall", "--", ":!.mtk-vendor.json"])
     if rc != 0:
         return False, [f"git status failed in {dest}: {out}"]
-    if out.strip():
-        for line in out.strip().splitlines():
-            rel = line[3:].strip().strip('"')
-            findings.append(
-                f"vendored copy is modified: {rel} - vendor/ is not a scratch tree; "
-                f"changes belong in deploys/{pkg}-server/ (hooks, config) or in an upstream release"
-            )
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        # porcelain v1: XY + space + path. Use [2:] + lstrip, never a whole-string
+        # lstrip first: it would eat a leading-space X column (the EADME.md bug).
+        rel = line[2:].lstrip()
+        # git quotes paths with special chars as C escapes; unquote faithfully.
+        if rel.startswith('"') and rel.endswith('"') and len(rel) >= 2:
+            rel = rel[1:-1].encode("latin-1", "backslashreplace").decode("unicode_escape")
+        if rel.endswith("/"):
+            continue  # untracked dir line; -uall keeps its files as separate entries
+        findings.append(
+            f"vendored copy is modified: {rel} - vendor/ is not a scratch tree; "
+            f"changes belong in deploys/{pkg}-server/ (hooks, config) or in an upstream release"
+        )
 
     rc, out = git(["git", "-C", str(dest), "rev-parse", "HEAD"])
     if rc != 0:
