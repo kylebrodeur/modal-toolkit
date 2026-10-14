@@ -216,11 +216,28 @@ def check_overlay(project_root: Path, pkg: str) -> Path:
 
     expected = f"{_project_slug(project_root)}-{pkg}"
     data = json.loads((overlay / "deploy.json").read_text())
-    app_name = data.get("app_name")
-    if app_name != expected:
+    # App name: top-level `app_name`, or `instance.app_name` (the
+    # instance-style exception: a lane overlay with a deliberately FIXED
+    # upstream-style name, like the vault instance whose secret/volume names
+    # are fixed upstream). A fixed instance name passes only because the
+    # lane's own deploy-provenance guard owns the collision check for it;
+    # the composed-name rule stays the default.
+    instance_name = (data.get("instance") or {}).get("app_name")
+    top_name = data.get("app_name")
+    if top_name and instance_name and top_name != instance_name:
         raise ProjectError(
-            f"deploys/{pkg}-server/deploy.json app_name must be {expected!r} (got {app_name!r}). "
+            f"deploys/{pkg}-server/deploy.json: instance.app_name ({instance_name!r}) "
+            f"disagrees with app_name ({top_name!r}); fix one"
+        )
+    if top_name and top_name != expected:
+        raise ProjectError(
+            f"deploys/{pkg}-server/deploy.json app_name must be {expected!r} (got {top_name!r}). "
             "Apps compose as <project>-<package> so projects never collide."
+        )
+    if not top_name and not instance_name:
+        raise ProjectError(
+            f"deploys/{pkg}-server/deploy.json app_name must be {expected!r} "
+            "(top-level app_name, or instance.app_name for the instance-style exception)"
         )
     return overlay
 

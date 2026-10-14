@@ -20,12 +20,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from toolkit import project
 
 
-def _overlay(root: Path, pkg: str, app_name: str | None) -> Path:
+def _overlay(root: Path, pkg: str, app_name: str | None, instance: bool = False) -> Path:
     overlay = root / "deploys" / f"{pkg}-server"
     overlay.mkdir(parents=True)
     body: dict = {"pkg": pkg}
     if app_name is not None:
-        body["app_name"] = app_name
+        if instance:
+            body["instance"] = {"app_name": app_name}
+        else:
+            body["app_name"] = app_name
     (overlay / "deploy.json").write_text(json.dumps(body))
     (overlay / "deploy.sh").write_text("#!/bin/sh\n")
     return overlay
@@ -128,3 +131,26 @@ class TestManifestRequired:
 
     def test_found_manifest_with_nothing_missing_returns_empty(self):
         assert project.missing_secrets(_Status(manifest_found=True, missing=[]), "inference") == []
+
+
+class TestInstanceStyleOverlay:
+    """The instance-style exception: deploys/<pkg>-server/ with a FIXED
+    instance.app_name (lane overlays whose secret/volume names are fixed
+    upstream). It passes the preflight; the collision guard for it is the
+    lane's own provenance guard."""
+
+    def test_instance_app_name_passes(self, project_root):
+        _overlay(project_root, "vault", "modal-vault-server", instance=True)
+        overlay = project.check_overlay(project_root, "vault")
+        assert overlay.is_dir()
+
+    def test_disagreeing_names_refuse(self, project_root):
+        _overlay(project_root, "vault", "modal-vault-server", instance=True)
+        import json as _json
+
+        p = project_root / "deploys" / "vault-server" / "deploy.json"
+        data = _json.loads(p.read_text())
+        data["app_name"] = "writing-lab-vault"
+        p.write_text(_json.dumps(data))
+        with pytest.raises(project.ProjectError, match="disagrees"):
+            project.check_overlay(project_root, "vault")
