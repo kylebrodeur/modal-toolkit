@@ -39,6 +39,7 @@ from functools import wraps
 from typing import ParamSpec, TypeVar
 
 ENV_URL = "MODAL_TOOLKIT_VM_URL"
+ENV_AUTH = "MODAL_TOOLKIT_VM_AUTH"  # optional "user:password" for HTTP Basic Auth
 DEFAULT_URL = "http://localhost:8428"
 
 _P = ParamSpec("_P")
@@ -56,13 +57,18 @@ def _escape_measurement(name: str) -> str:
 
 
 def line_protocol(measurement: str, value: float, tags: dict[str, str] | None = None, ts: int | None = None) -> str:
-    """Build one line: ``measurement,tag=v value timestamp_seconds``."""
+    """Build one line: ``measurement,tag=v value=<num> timestamp_seconds``.
+
+    The fieldset MUST be ``key=value`` per Influx line protocol - a bare
+    number is invalid and VictoriaMetrics' Influx endpoint rejects the line
+    with HTTP 400 ("missing field value"). The field key is always ``value``.
+    """
     name = _escape_measurement(str(measurement))
     tag_part = ""
     if tags:
         tag_part = "," + ",".join(f"{_escape_tag(str(k))}={_escape_tag(str(v))}" for k, v in tags.items())
     stamp = int(time.time()) if ts is None else int(ts)
-    return f"{name}{tag_part} {value} {stamp}"
+    return f"{name}{tag_part} value={value} {stamp}"
 
 
 def effective_url() -> tuple[str, str]:
@@ -87,17 +93,28 @@ class VMWriter:
         org: str = "-",
         bucket: str = "-",
         timeout: float = 5.0,
+        auth: str | None = None,
     ) -> None:
         resolved = (url or os.environ.get(ENV_URL) or DEFAULT_URL).rstrip("/")
         self.url = resolved
         self.org = org
         self.bucket = bucket
         self.timeout = timeout
+        self._auth = auth if auth is not None else os.environ.get(ENV_AUTH)
 
     @property
     def endpoint(self) -> str:
         query = urllib.parse.urlencode({"precision": "s", "org": self.org, "bucket": self.bucket})
         return f"{self.url}/api/v2/write?{query}"
+
+    def _headers(self) -> dict[str, str]:
+        """Basic auth when an `auth` (or env `MODAL_TOOLKIT_VM_AUTH`) is set; none otherwise."""
+        import base64
+
+        if not self._auth:
+            return {}
+        token = base64.b64encode(self._auth.encode("utf-8")).decode("ascii")
+        return {"Authorization": f"Basic {token}"}
 
     def write(
         self,
@@ -108,7 +125,7 @@ class VMWriter:
     ) -> bool:
         line = line_protocol(measurement, value, tags=tags, ts=ts)
         endpoint = self.endpoint
-        req = urllib.request.Request(endpoint, data=line.encode("utf-8"), method="POST")
+        req = urllib.request.Request(endpoint, data=line.encode("utf-8"), method="POST", headers=self._headers())
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 if resp.status == 204:
