@@ -104,3 +104,17 @@ def test_a_failed_deploy_leaves_no_override_record(project_with_vendor, monkeypa
     assert rc == 3
     record = json.loads((root / ".mtk" / "config.json").read_text())
     assert not record["packages"]["vault"].get("overrides")
+
+
+def test_clean_deploy_records_the_deploy_signal(project_with_vendor, monkeypatch):
+    """Every successful deploy records deployed.at + the pinned tag (the
+    source of the `deployed` lifecycle link), even without drift."""
+    root, _vendor, _overlay = project_with_vendor
+    run_calls: list = []
+    rc = _run_deploy(monkeypatch, root, run_calls=run_calls, rc=0)
+    assert rc == 0
+    record = json.loads((root / ".mtk" / "config.json").read_text())
+    entry = record["packages"]["vault"]
+    assert entry["deployed"]["at"]
+    assert entry["tag"] == "v1.0.0"
+    assert not entry.get("overrides", [])

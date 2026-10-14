@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from toolkit import config as cfg
+from toolkit import project as mtk_project
 
 # The Modal invocation seam. Tests inject their fake shim either per args
 # (create) or by patching this module attribute (check_all). Production runs
@@ -365,7 +366,7 @@ def _pkg_repo(pkg: str) -> Path:
     project, the shared repos root remains the discovery path.
     """
     repo_name = REPO_SPECIAL.get(pkg, f"modal-{pkg}-server")
-    vendored = Path.cwd() / "vendor" / f"{pkg}-server"
+    vendored = mtk_project.vendor_dir(Path.cwd(), pkg)
     if (vendored / "server" / "secrets.toml").is_file():
         return vendored
     return cfg.repos_root() / repo_name

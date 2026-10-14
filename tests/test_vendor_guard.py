@@ -100,3 +100,25 @@ def test_an_unvendored_package_fails_closed(tmp_path: Path) -> None:
     ok, findings = mtk_project.vendor_check(project, "vault")
     assert not ok
     assert any("never vendored" in f.lower() for f in findings)
+
+
+def test_two_tags_on_one_commit_pass_when_the_recorded_tag_resolves(tmp_path: Path) -> None:
+    """vendor_check compares commits (like the shell guard): two tags sharing
+    one commit must not fail just because describe picks an arbitrary one."""
+    project = tmp_path / "p"
+    (project / ".mtk").mkdir(parents=True)
+    (project / ".mtk" / "config.json").write_text(json.dumps({"slug": "p", "packages": {}}) + "\n")
+    origin = tmp_path / "origin-modal-vault-server"
+    origin.mkdir()
+    _run(origin, "git", "init", "-q", "-b", "main")
+    _run(origin, "git", "config", "user.email", "t@t")
+    _run(origin, "git", "config", "user.name", "t")
+    (origin / "server").mkdir()
+    (origin / "server" / "app.py").write_text("a = 1\n")
+    _run(origin, "git", "add", "-A")
+    _run(origin, "git", "commit", "-q", "-m", "one")
+    _run(origin, "git", "tag", "v1.0.0")
+    _run(origin, "git", "tag", "release-2026-10")
+    mtk_project.vendor_packages(project, ["vault"], tags={"vault": "v1.0.0"}, url_for=lambda _x: str(origin))
+    ok, findings = mtk_project.vendor_check(project, "vault")
+    assert ok, findings

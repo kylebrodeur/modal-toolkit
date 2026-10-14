@@ -105,7 +105,7 @@ def _repo_dir(pkg: str) -> Path:
     """
     name = _REPO_SPECIAL.get(pkg, f"modal-{pkg}-server")
     cwd = Path.cwd()
-    vendored = cwd / "vendor" / f"{pkg}-server"
+    vendored = mtk_project.vendor_dir(cwd, pkg)
     if (vendored / ".git").exists():
         return vendored
     return _repos_root() / name
@@ -874,14 +874,18 @@ def cmd_deploy(args: argparse.Namespace) -> int:
 
     mtk_project.ensure_secrets(missing, confirm=_confirm_secret, create_all=_create)
     rc = subprocess.run(["sh", str(overlay / "deploy.sh")], cwd=overlay, check=False).returncode
-    if rc == 0 and findings_note:
+    if rc == 0:
+        # the deploy signal (source of the `deployed` lifecycle link)
         record_path = project_root / ".mtk" / "config.json"
         record = json.loads(record_path.read_text())
         entry = record.setdefault("packages", {}).setdefault(args.pkg, {})
-        overrides = entry.setdefault("overrides", [])
-        overrides.append({"findings": findings_note, "at": datetime.now().isoformat(timespec="seconds")})
+        entry["deployed"] = {"at": datetime.now().isoformat(timespec="seconds")}
+        entry["tag"] = mtk_project.vendor_meta_tag(project_root, args.pkg)
+        if findings_note:  # an overridden drift deploy records the override too
+            overrides = entry.setdefault("overrides", [])
+            overrides.append({"findings": findings_note, "at": entry["deployed"]["at"]})
+            print(f"recorded the --allow-local-changes override for {args.pkg!r}")
         record_path.write_text(json.dumps(record, indent=2) + "\n")
-        print(f"recorded the --allow-local-changes override for {args.pkg!r}")
     return rc
 
 

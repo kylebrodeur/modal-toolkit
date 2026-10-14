@@ -337,6 +337,17 @@ def vendor_dir(project_root: Path, pkg: str) -> Path:
     return project_root / VENDOR_DIR / f"{pkg}-server"
 
 
+def vendor_meta_tag(project_root: Path, pkg: str) -> str | None:
+    """The vendored copy's pinned tag from its provenance file, or None."""
+    meta_path = vendor_dir(project_root, pkg) / VENDOR_META
+    if not meta_path.is_file():
+        return None
+    try:
+        return str(json.loads(meta_path.read_text()).get("tag")) or None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def _tag_head(git: Callable[[list[str]], tuple[int, str]], repo: Path, tag: str) -> str | None:
     """The commit a tag names, or None when the tag does not resolve."""
     rc, out = git(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", f"{tag}^{{commit}}"])
@@ -506,10 +517,18 @@ def vendor_check(
             f"fix: re-vendor with `mtk pull {pkg} --tag {meta.get('tag', '?')}`"
         )
 
-    rc, out = git(["git", "-C", str(dest), "describe", "--exact-match", "--tags", head])
-    exact = rc == 0 and out.strip() == meta.get("tag", "")
-    if not exact:
-        found = out.strip() if rc == 0 else "no exact tag"
-        findings.append(f"HEAD does not resolve exactly to tag {meta.get('tag', '?')!r} (got {found!r})")
+    # commit comparison, not "describe --exact-match": two tags can share one
+    # commit; the right question is whether the RECORDED tag resolves to HEAD.
+    rc, out = git(["git", "-C", str(dest), "rev-parse", "--verify", "--quiet", f"{meta.get('tag', '')}^{{commit}}"])
+    if rc != 0 or not out.strip():
+        findings.append(
+            f"provenance tag {meta.get('tag', '?')!r} does not resolve in the vendored copy; "
+            f"fix: re-vendor with `mtk pull {pkg} --tag <release>`"
+        )
+    elif out.strip() != head:
+        findings.append(
+            f"tag {meta.get('tag', '?')!r} resolves to {out.strip()[:12]}, not HEAD; "
+            f"fix: re-vendor with `mtk pull {pkg} --tag {meta.get('tag', '?')}`"
+        )
 
     return not findings, findings
