@@ -20,7 +20,7 @@ state (this exact failure happened to the writing-duo vault lane on
 2026-10-09).
 
 - Operator/lane deploys run from an overlay dir
-  (`deploys/<pkg>/`: `deploy.json` composes `<slug>-<pkg>` app names +
+  (`deploys/<pkg>-server/`: `deploy.json` composes `<slug>-<pkg>` app names +
   secret NAMES; `deploy.sh` is the entry point).
 - Before ANY account-touching command, run the preflight guard:
 

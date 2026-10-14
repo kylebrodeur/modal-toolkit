@@ -23,7 +23,6 @@ from toolkit import cli
         (["init"], cli.cmd_init),
         (["init", "lab-one", "--agents"], cli.cmd_init),
         (["init", "--no-agents"], cli.cmd_init),
-        (["pull", "vault"], cli.cmd_pull),
         (["pull", "vault", "--tag", "v1.0.0"], cli.cmd_pull),
         (["deploy", "vault"], cli.cmd_deploy),
         (["deploy", "vault", "--allow-local-changes"], cli.cmd_deploy),
@@ -39,9 +38,12 @@ def test_deploy_override_flag_is_explicit_and_off_by_default():
     assert cli.build_parser().parse_args(["deploy", "vault", "--allow-local-changes"]).allow_local_changes is True
 
 
-def test_pull_carries_an_optional_tag():
-    assert cli.build_parser().parse_args(["pull", "vault"]).tag is None
-    assert cli.build_parser().parse_args(["pull", "vault", "--tag", "v1.0.0"]).tag == "v1.0.0"
+def test_pull_requires_the_tag_and_is_single_package():
+    # missing tag -> parse error; multi-package forms are refused (a tag belongs to one repo)
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["pull", "vault"])
+    args = cli.build_parser().parse_args(["pull", "vault", "--tag", "v1.0.0"])
+    assert args.pkg == "vault" and args.tag == "v1.0.0"
 
 
 def test_agents_flags_map_to_explicit_values():

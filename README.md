@@ -185,25 +185,23 @@ The **actual cost** depends on how long containers stay warm; the toolkit's job 
 
 See [`examples/`](examples/) for the full lifecycle: setup → doctor → warm → use → shutdown.
 
-## Operator deploy overlays (`deploys/`)
+## Projects: vendor copies and deploy overlays
 
-Upstream repos are **SOURCE, never deploy targets.** Each operator deploys a
-private instance from a deploy directory that references the upstream
-checkout by path:
+Upstream repos are **SOURCE, never deploy targets.** A project vendors a
+tag-pinned copy of each package and deploys it from its own overlay:
 
 ```
-<operator-repo>/deploys/<pkg>/
-├── deploy.json   # instance name (env), knob values, secret NAMES
-└── deploy.sh     # exports the env, runs the upstream repo's deploy command
+<project>/vendor/<pkg>-server/       code: git checkout detached at a release tag (read-only, guarded)
+<project>/vendor/<pkg>-server/.mtk-vendor.json   provenance: repo, tag, commit
+<project>/deploys/<pkg>-server/      decisions: deploy.json (app name, knobs, secret NAMES), deploy.sh, seed.json
 ```
 
-- **The rule that matters:** upstream repos are never modified by deploys;
-  operator state lives in the overlay, not in the source repo.
+- **The rule that matters:** the vendored copy is never edited (any drift
+  refuses a deploy; `--allow-local-changes` is the recorded override). All
+  operator state lives in the overlay.
 - **Secret-name invariant:** `deploy.json`'s secret NAMES must match the
-  repo's `server/secrets.toml` manifest - the manifest is the source of
-  truth `mtk secrets` acts against, so overlays never invent names.
-- **No `mtk deploy` wrapper (by design):** the package's own CLI + the
-  operator overlay beat a generic dispatcher.
+  vendored repo's `server/secrets.toml` manifest - the manifest is the source
+  of truth `mtk secrets` acts against, so overlays never invent names.
 - Reference implementation: `writing-duo/deploys/embedding-server/`
   (private instance of modal-embedding-server, deployed + verified).
 

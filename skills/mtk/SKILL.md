@@ -15,14 +15,14 @@ each package from the project's own overlay. Install with
 mtk setup --repos-root ~/repos   # once: shared config, token at the prompt
 mtk init my-project              # scaffold; checks prerequisites and the account
 cd my-project
-mtk pull vault                   # clone the package repo into the repos root
+mtk pull vault --tag v1.2.2       # vendor a tag-pinned copy into vendor/vault-server/
 mtk deploy vault                 # preflight overlay, confirm secrets, run deploy.sh
 mtk doctor --pkg vault           # health and drift
 ```
 
 ## Rules
 
-- Deploy only through `deploys/<pkg>/` in the project. The overlay has a
+- Deploy only through `deploys/<pkg>-server/` in the project. The overlay has a
   `deploy.json` (app name `<project>-<pkg>`) and a `deploy.sh`.
 - Never run `modal deploy` inside a package checkout.
 - `mtk deploy` lists missing secrets and asks before creating each one. Do not
@@ -52,5 +52,5 @@ Package names: `vault`, `embedding`, `inference`, `vision`, `finetune`.
 
 - "no active Modal profile": run `modal setup`.
 - "cannot reach your Modal account": check network, then `modal setup`.
-- "no readable secrets manifest": run `mtk pull <pkg>` first. The gate fails closed.
+- "no readable secrets manifest": vendor the package first (`mtk pull <pkg> --tag <release>`). The gate fails closed.
 - "app_name must be ...": the overlay's `deploy.json` must name `<project>-<pkg>`.

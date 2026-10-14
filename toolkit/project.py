@@ -123,7 +123,26 @@ def init_project(base: Path, project_id: str | None = None) -> Path:
     (root / "deploys").mkdir(exist_ok=True)
     record_path.parent.mkdir(exist_ok=True)
     record_path.write_text(json.dumps({"slug": slug, "packages": {}}, indent=2) + "\n")
+    keep_project_git_clean(root)
     return root
+
+
+def keep_project_git_clean(root: Path) -> None:
+    """Ignore vendor/ (and Modal's .venv) inside project git repos.
+
+    A nested checkout under vendor/ shows as one untracked dir in the parent
+    project's git status (git does not track inside a nested repo). Ignoring
+    it keeps the project clean while the vendor guard still enforces the pin
+    (git describe works fine inside an ignored nested checkout).
+    """
+    gitignore = root / ".gitignore"
+    lines = gitignore.read_text().splitlines() if gitignore.is_file() else []
+    needed = [ln for ln in ("vendor/", ".venv/") if ln not in lines]
+    if needed:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend(needed)
+        gitignore.write_text("\n".join(lines) + "\n")
 
 
 def resolve_slug(base: Path, project_id: str | None = None) -> str:
@@ -250,9 +269,12 @@ def agents_block(slug: str, packages: list[str]) -> str:
         "",
         f"This project (`{slug}`) deploys with `mtk`. Packages: {pkgs}.",
         "",
-        "- Check state: `mtk doctor`. Pull a package: `mtk pull <pkg>`.",
+        "- Check state: `mtk doctor`. Vendor a package: `mtk pull <pkg> --tag <release>`.",
         *[f"- Deploy {p}: `mtk deploy {p}`" for p in packages],
-        "- Deploy only through the overlays in `deploys/<pkg>/`. Never run `modal deploy` inside a package checkout.",
+        "- Deploy only through the overlays in `deploys/<pkg>-server/`. "
+        "Never run `modal deploy` inside a package checkout.",
+        "- vendor/ is a tag-pinned read-only copy: never edit it. "
+        "Customise from the overlay (config, env, hooks, seed.json).",
         "- Secrets are confirmed before any is created. Never write secret values into this repo.",
         BLOCK_END,
     ]
@@ -306,8 +328,8 @@ VENDOR_META = ".mtk-vendor.json"
 
 
 def vendor_dir(project_root: Path, pkg: str) -> Path:
-    """vendor/<upstream-repo-name>/ inside the project, keyed by the repo name."""
-    return project_root / VENDOR_DIR / REPO_NAMES[pkg]
+    """vendor/<pkg>-server/ inside the project (matches deploys/<pkg>-server/)."""
+    return project_root / VENDOR_DIR / f"{pkg}-server"
 
 
 def _tag_head(git: Callable[[list[str]], tuple[int, str]], repo: Path, tag: str) -> str | None:
@@ -422,7 +444,7 @@ def vendor_packages(
             "vendored": "detached checkout of the release tag",
         }
         (dest / VENDOR_META).write_text(json.dumps(meta, indent=2) + "\n")
-        record_packages[pkg] = {"vendor": str(dest), "tag": tags[pkg]}
+        record_packages[pkg] = {"vendor": f"{VENDOR_DIR}/{pkg}-server", "tag": tags[pkg]}
         wrote.append(pkg)
 
     record_path.write_text(json.dumps(record, indent=2) + "\n")

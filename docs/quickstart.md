@@ -60,14 +60,17 @@ project's slug, and each app composes as `<slug>-<pkg>`. Pick a slug that is
 unique in your Modal workspace. `init` refuses a slug that collides with an
 existing app.
 
-## 4. Pull the packages you use
+## 4. Vendor the packages you use
 
 ```bash
-mtk pull vault embedding
+mtk pull vault --tag v1.2.2
 ```
 
-Each repo is cloned into your repos root. A repo that is already there is left
-alone, so local edits survive.
+Each vendored package lands in `vendor/<pkg>-server/`: a git checkout pinned to
+the exact release tag you pass. The copy is read-only (a drift refuses a
+deploy) and records its provenance (repo, tag, commit) next to itself. To
+upgrade, pull the same package at a newer tag; `mtk` asks before replacing the
+pin.
 
 ## 5. Secrets, then deploy
 
@@ -78,9 +81,11 @@ asks you to confirm each one before it creates anything:
 mtk deploy vault
 ```
 
-Deploy needs `deploys/<pkg>/` in your project, with a `deploy.json` that names the
-app `<slug>-<pkg>`, and a `deploy.sh`. The per-server quickstarts show what goes
-in each overlay.
+Deploy needs `deploys/<pkg>-server/` in your project, with a `deploy.json` that
+names the app `<slug>-<pkg>`, and a `deploy.sh`. The per-server quickstarts
+show what goes in each overlay. Seedable artifacts (model weights for
+inference) are declared in a third overlay file, `seed.json`; stage them with
+`mtk seed <pkg>` before the first deploy.
 
 ## 6. Health and cost
 
@@ -96,7 +101,7 @@ mtk shutdown --pkg <p>  # scale a worker to zero (vision's stop path is an undep
 | :--- | :--- |
 | `setup`, `config`, `status` | Write, validate, and summarize the shared config |
 | `init [<id>]` | Scaffold a project; checks prerequisites and the account (read-only) |
-| `pull <pkg> ...` | Clone package repos into the repos root and record them |
+| `pull <pkg> --tag <release>` | Vendor a tag-pinned copy into vendor/<pkg>-server/ |
 | `deploy <pkg>` | Preflight the overlay, gate secrets, run the overlay's `deploy.sh` |
 | `secrets check \| create \| rotate` | Manifest vs workspace; create or rotate secrets |
 | `libs sync \| check` | Vendor and parity-check the shared libraries |

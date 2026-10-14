@@ -13,9 +13,9 @@ overlay.
 
 ## Working in a project that uses `mtk`
 
-- Create or reuse a project with `mtk init`, then `mtk pull <pkg>` and
-  `mtk deploy <pkg>`.
-- Deploy only through the project's `deploys/<pkg>/` overlay. Never run
+- Create or reuse a project with `mtk init`, then `mtk pull <pkg> --tag <release>`
+  and `mtk deploy <pkg>`.
+- Deploy only through the project's `deploys/<pkg>-server/` overlay. Never run
   `modal deploy` inside a package checkout.
 - Check state with `mtk doctor`. Read `mtk status --no-net` for a config-only view.
 - Secrets are confirmed before anything is created. Never write secret values

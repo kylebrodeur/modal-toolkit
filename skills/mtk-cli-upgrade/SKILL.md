@@ -21,7 +21,7 @@ mtk libs check                                # vendored shared-module parity
 
 ## Deploy rules
 
-- Deploys go through a project overlay: `deploys/<pkg>/` with a `deploy.json`
+- Deploys go through a project overlay: `deploys/<pkg>-server/` with a `deploy.json`
   (app name `<project>-<pkg>`) and a `deploy.sh`. Run `mtk deploy <pkg>`.
 - Never run `modal deploy` inside a package or toolkit checkout. Checkouts are source.
 - The provenance preflight refuses a plain checkout:

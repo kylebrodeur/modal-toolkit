@@ -365,7 +365,7 @@ def _pkg_repo(pkg: str) -> Path:
     project, the shared repos root remains the discovery path.
     """
     repo_name = REPO_SPECIAL.get(pkg, f"modal-{pkg}-server")
-    vendored = Path.cwd() / "vendor" / repo_name
+    vendored = Path.cwd() / "vendor" / f"{pkg}-server"
     if (vendored / "server" / "secrets.toml").is_file():
         return vendored
     return cfg.repos_root() / repo_name

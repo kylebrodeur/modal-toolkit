@@ -30,7 +30,7 @@ def _run(cwd: Path, *argv: str) -> None:
 @pytest.fixture()
 def upstream(tmp_path: Path) -> Path:
     """A local bare git repo with one commit tagged v1.0.0 and a later v1.1.0."""
-    origin = tmp_path / "origin-modal-inference-server"
+    origin = tmp_path / "upstream-modal-inference-server"
     origin.mkdir()
     _run(origin, "git", "init", "-q", "-b", "main")
     _run(origin, "git", "config", "user.email", "t@t")
@@ -65,7 +65,7 @@ def _vendor_commit(vendor: Path) -> str:
 
 def test_pull_vendors_at_tag_with_provenance(project: Path, upstream: Path) -> None:
     mtk_project.vendor_packages(project, ["inference"], tags={"inference": "v1.0.0"}, url_for=lambda _p: str(upstream))
-    vendor = project / "vendor" / "modal-inference-server"
+    vendor = project / "vendor" / "inference-server"
     assert (vendor / "server" / "app.py").read_text() == "print('v1')\n"
     # detached at the tag, so the SHA is visible and stable
     branch = (vendor / ".git" / "HEAD").read_text()
@@ -99,7 +99,7 @@ def test_pull_refuses_an_unknown_package(project: Path, upstream: Path) -> None:
 
 def test_revendor_to_a_new_tag_needs_confirm(project: Path, upstream: Path) -> None:
     mtk_project.vendor_packages(project, ["inference"], tags={"inference": "v1.0.0"}, url_for=lambda _p: str(upstream))
-    vendor = project / "vendor" / "modal-inference-server"
+    vendor = project / "vendor" / "inference-server"
     # default: refuse (a re-vendor is a decision, not a side effect)
     with pytest.raises(mtk_project.ProjectError, match=r"v1\.1\.0"):
         mtk_project.vendor_packages(
@@ -122,7 +122,7 @@ def test_revendor_to_a_new_tag_needs_confirm(project: Path, upstream: Path) -> N
 def test_vendored_copy_is_recorded_in_the_project(project: Path, upstream: Path) -> None:
     mtk_project.vendor_packages(project, ["inference"], tags={"inference": "v1.0.0"}, url_for=lambda _p: str(upstream))
     record = json.loads((project / ".mtk" / "config.json").read_text())
-    assert record["packages"]["inference"]["vendor"] == str(project / "vendor" / "modal-inference-server")
+    assert record["packages"]["inference"]["vendor"] == "vendor/inference-server"
     assert record["packages"]["inference"]["tag"] == "v1.0.0"
 
 

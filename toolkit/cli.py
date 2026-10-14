@@ -105,7 +105,7 @@ def _repo_dir(pkg: str) -> Path:
     """
     name = _REPO_SPECIAL.get(pkg, f"modal-{pkg}-server")
     cwd = Path.cwd()
-    vendored = cwd / "vendor" / name
+    vendored = cwd / "vendor" / f"{pkg}-server"
     if (vendored / ".git").exists():
         return vendored
     return _repos_root() / name
@@ -787,25 +787,16 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
     The vendor model is the only model (decided 2026-10-14): the copy lives
     under vendor/<pkg>-server/, is a detached checkout of the exact release
-    tag, and is guarded by vendor_check on every deploy and seed.
+    tag, and is guarded by vendor_check on every deploy and seed. One call
+    vendors one package at one tag (a tag belongs to one repo).
     """
     project_root = Path.cwd()
-    if not args.tag:
-        raise SystemExit(
-            "mtk pull requires --tag <release>. Fix: pick the release tag to vendor, e.g. `mtk pull vault --tag v1.2.2`"
-        )
     mtk_project.check_prerequisites()
-    mtk_project.vendor_packages(
-        project_root,
-        list(args.packages),
-        tags={pkg: args.tag for pkg in args.packages},
-        confirm=_confirm_revendor,
-    )
+    mtk_project.vendor_packages(project_root, [args.pkg], tags={args.pkg: args.tag}, confirm=_confirm_revendor)
     if (project_root / "llms.txt").exists():
         record = json.loads((project_root / ".mtk" / "config.json").read_text())
-        mtk_project.install_agent_files(project_root, record["slug"], list(record["packages"]))
-    for pkg in args.packages:
-        print(f"pulled {pkg}: {mtk_project.vendor_dir(project_root, pkg)} at {args.tag}")
+        mtk_project.install_agent_files(project_root, record["slug"], [args.pkg])
+    print(f"pulled {args.pkg}: {mtk_project.vendor_dir(project_root, args.pkg)} at {args.tag}")
     return 0
 
 
@@ -887,11 +878,11 @@ def build_parser() -> argparse.ArgumentParser:
     init_p.add_argument("--agents", dest="agents", action="store_true", default=None, help="add AGENTS.md and llms.txt")
     init_p.add_argument("--no-agents", dest="agents", action="store_false", help="skip AGENTS.md and llms.txt")
     init_p.set_defaults(func=cmd_init)
-    pull_p = sub.add_parser("pull", help="clone package repos into the repos root and record them in this project")
-    pull_p.add_argument("packages", nargs="+", help="package names, e.g. vault embedding")
-    pull_p.add_argument("--tag", help="release tag to vendor at (required for a vendored pull), e.g. v1.2.0")
+    pull_p = sub.add_parser("pull", help="vendor a tag-pinned copy of ONE package into this project")
+    pull_p.add_argument("pkg", help="package name, e.g. vault")
+    pull_p.add_argument("--tag", required=True, help="release tag to vendor at, e.g. v1.2.2")
     pull_p.set_defaults(func=cmd_pull)
-    deploy_p = sub.add_parser("deploy", help="deploy a package from this project's deploys/<pkg>/ overlay")
+    deploy_p = sub.add_parser("deploy", help="deploy a package from this project's deploys/<pkg>-server/ overlay")
     deploy_p.add_argument("pkg", help="package name, e.g. vault")
     deploy_p.add_argument(
         "--allow-local-changes",
