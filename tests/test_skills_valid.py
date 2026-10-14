@@ -70,18 +70,18 @@ def test_there_is_at_least_one_skill():
 
 
 @pytest.mark.parametrize(
-    ("skill_rel", "banned_api"),
+    ("skill_rel", "required_form", "banned_api"),
     [
-        ("../../modal-vault-server/skills/mtk-vault-setup-hooks/SKILL.md", "hooks.observe"),
-        ("../../modal-inference-server/skills/mtk-inference-setup-hooks/SKILL.md", "hooks.observe"),
+        ("../../modal-vault-server/skills/mtk-vault-setup-hooks/SKILL.md", "hooks.on(", "hooks.observe"),
+        ("../../modal-inference-server/skills/mtk-inference-setup-hooks/SKILL.md", "hooks.register(", "hooks.observe"),
     ],
 )
-def test_hook_samples_use_the_real_seam_api(skill_rel: str, banned_api: str):
+def test_hook_samples_use_the_real_seam_api(skill_rel: str, required_form: str, banned_api: str):
     from pathlib import Path as _Path
 
     path = _Path(__file__).resolve().parent / skill_rel
     if not path.is_file():
         pytest.skip(f"{skill_rel}: sibling server checkout not present (standalone clone)")
     text = path.read_text()
-    assert "hooks.register(" in text, f"{skill_rel}: sample must use hooks.register()"
+    assert required_form in text, f"{skill_rel}: sample must use {required_form!r}"
     assert banned_api not in text, f"{skill_rel}: sample uses a non-existent API {banned_api!r}"

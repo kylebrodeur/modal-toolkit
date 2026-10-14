@@ -219,7 +219,7 @@ def check_overlay(project_root: Path, pkg: str) -> Path:
     app_name = data.get("app_name")
     if app_name != expected:
         raise ProjectError(
-            f"deploys/{pkg}/deploy.json app_name must be {expected!r} (got {app_name!r}). "
+            f"deploys/{pkg}-server/deploy.json app_name must be {expected!r} (got {app_name!r}). "
             "Apps compose as <project>-<package> so projects never collide."
         )
     return overlay
