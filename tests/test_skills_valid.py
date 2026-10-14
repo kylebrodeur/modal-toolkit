@@ -14,11 +14,22 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent / "skills"
+REPOS = Path(__file__).resolve().parent.parent.parent  # the system folder (sibling repos)
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
+def _find_skill_dirs(base: Path) -> list[Path]:
+    return sorted(p for p in base.iterdir() if p.is_dir() and (p / "SKILL.md").is_file())
+
+
 def _skill_dirs() -> list[Path]:
-    return sorted(p for p in ROOT.iterdir() if p.is_dir())
+    # the toolkit's own skills plus every sibling server repo's skills/
+    dirs = _find_skill_dirs(ROOT)
+    for repo in sorted(REPOS.iterdir()):
+        skills = repo / "skills"
+        if skills.is_dir():
+            dirs.extend(_find_skill_dirs(skills))
+    return sorted(set(dirs))
 
 
 def _frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -56,3 +67,21 @@ def test_skill_matches_the_spec(skill_dir: Path):
 
 def test_there_is_at_least_one_skill():
     assert _skill_dirs(), "skills/ must contain at least one skill"
+
+
+@pytest.mark.parametrize(
+    ("skill_rel", "banned_api"),
+    [
+        ("../../modal-vault-server/skills/mtk-vault-setup-hooks/SKILL.md", "hooks.observe"),
+        ("../../modal-inference-server/skills/mtk-inference-setup-hooks/SKILL.md", "hooks.observe"),
+    ],
+)
+def test_hook_samples_use_the_real_seam_api(skill_rel: str, banned_api: str):
+    from pathlib import Path as _Path
+
+    path = _Path(__file__).resolve().parent / skill_rel
+    if not path.is_file():
+        pytest.skip(f"{skill_rel}: sibling server checkout not present (standalone clone)")
+    text = path.read_text()
+    assert "hooks.register(" in text, f"{skill_rel}: sample must use hooks.register()"
+    assert banned_api not in text, f"{skill_rel}: sample uses a non-existent API {banned_api!r}"
