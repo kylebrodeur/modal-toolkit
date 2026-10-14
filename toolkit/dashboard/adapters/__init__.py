@@ -53,7 +53,16 @@ def _base(cfg: Mapping[str, Any]) -> str:
 
 def _headers(cfg: Mapping[str, Any]) -> dict[str, str]:
     token = str(cfg.get("token", "") or "")
-    return {"Authorization": f"Bearer {token}"} if token else {}
+    if not token:
+        return {}
+    import base64
+
+    # Basic (user:password) when the pair shape is present (the metrics
+    # store's only auth shape); Bearer otherwise.
+    if ":" in token and not token.startswith(("Bearer ", "Basic ")):
+        encoded = base64.b64encode(token.encode("utf-8")).decode("ascii")
+        return {"Authorization": f"Basic {encoded}"}
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _timed(method: str, url: str, **kwargs: Any) -> Probe:

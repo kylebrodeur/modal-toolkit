@@ -51,7 +51,7 @@ mtk doctor --pkg vault           # health and drift
 | `mtk shutdown --pkg <p>` | Scale a worker to zero (vision's stop path is an undeploy and asks first) |
 | `mtk cost` | Always-on GPU-hour view |
 
-Package names: `vault`, `embedding`, `inference`, `vision`, `finetune`.
+Package names: `vault`, `embedding`, `inference`, `vision`, `finetune`, `vm` (the metrics store).
 
 ## Skills
 

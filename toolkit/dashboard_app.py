@@ -16,13 +16,14 @@ from toolkit.dashboard.adapters.embedding import ADAPTER as EMBEDDING
 from toolkit.dashboard.adapters.finetune import ADAPTER as FINETUNE
 from toolkit.dashboard.adapters.inference import ADAPTER as INFERENCE
 from toolkit.dashboard.adapters.vision import ADAPTER as VISION
+from toolkit.dashboard.adapters.vm import ADAPTER as VM
 from toolkit.dashboard.api import build_fleet_api
 
 CONFIG_VOLUME_NAME = "modal-toolkit-dashboard"
 CONFIG_MOUNT = "/config"
 CONFIG_FILE = f"{CONFIG_MOUNT}/dashboard-config.json"
 
-ADAPTERS = {"embedding": EMBEDDING, "inference": INFERENCE, "vision": VISION, "finetune": FINETUNE}
+ADAPTERS = {"embedding": EMBEDDING, "inference": INFERENCE, "vision": VISION, "finetune": FINETUNE, "vm": VM}
 
 
 def _load_cfg() -> dict:

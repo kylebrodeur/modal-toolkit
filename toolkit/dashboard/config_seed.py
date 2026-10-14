@@ -21,7 +21,7 @@ from typing import Any
 
 from .. import config as cfg
 
-PACKAGES_WITH_CARDS = ("embedding", "inference", "vision", "finetune")
+PACKAGES_WITH_CARDS = ("embedding", "inference", "vision", "finetune", "vm")
 
 
 def dashboard_config(toolkit_cfg: dict[str, Any]) -> dict[str, Any]:

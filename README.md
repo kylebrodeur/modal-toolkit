@@ -146,6 +146,7 @@ One file, one section per package. Tokens are never printed by any `mtk` command
   "finetune":   {"base_model": "...", "adapter_repo": "...", "hf_user": "..."},
   "coding":     {"base_url": "...", "token": "...", "alias": "..."},
   "vault":      {"base_url": "...", "token": "..."},
+  "vm":         {"base_url": "...", "auth": "user:password"},
   "repos":      {"root": "/path/to/your/repos-dir"}
 }
 ```
