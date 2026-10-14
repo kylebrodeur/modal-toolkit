@@ -343,7 +343,8 @@ def vendor_meta_tag(project_root: Path, pkg: str) -> str | None:
     if not meta_path.is_file():
         return None
     try:
-        return str(json.loads(meta_path.read_text()).get("tag")) or None
+        tag = json.loads(meta_path.read_text()).get("tag")
+        return str(tag) if tag else None
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -363,11 +364,15 @@ def vendor_packages(
     git: Callable[[list[str]], tuple[int, str]] = _default_git,
     confirm: Callable[[str], bool] = lambda _q: False,
 ) -> None:
-    """Vendor each package into vendor/<repo-name>/ as a checkout pinned to an exact tag.
+    """Vendor each package into vendor/<pkg>-server/ (one layout with the overlay dir).
 
+    Copies pin an exact release tag as a detached checkout with provenance.
     Refusals happen before any write: unknown package, unknown tag,
-    provenance missing for a package. Re-vendoring an existing vendor dir is a
-    decision, so it needs confirm=True; the default refuses.
+    provenance missing for a package. Re-vendoring an existing vendor dir to
+    a different tag is a decision, so it needs confirm=True; the default
+    refuses. A record entry is merged, not replaced: seeded history keeps,
+    and the deployed signal keeps only when the tag is unchanged (a new pin
+    has not been deployed).
     """
     unknown = [pkg for pkg in pkgs if pkg not in REPO_NAMES]
     if unknown:
@@ -395,22 +400,16 @@ def vendor_packages(
             raise ProjectError(f"cannot resolve tag {tags[pkg]!r} for {pkg!r}: no source to fetch from")
         planned.append((pkg, url, dest, commit or ""))
 
-    confirmations: list[tuple[str, Path, str]] = []
+    # Re-vendor confirmation is a decision gate (no disk writes here).
     for pkg, _url, dest, _commit in planned:
         existing_meta = dest / VENDOR_META if dest.exists() else None
         if existing_meta is None or not existing_meta.is_file():
             continue
         current = json.loads(existing_meta.read_text()).get("tag", "?")
-        if current != tags[pkg]:
-            if not confirm(f"re-vendor {pkg} from {current} to {tags[pkg]}"):
-                raise ProjectError(
-                    f"{pkg!r} is vendored at {current!r}; refusing to move it to {tags[pkg]!r} without confirmation"
-                )
-            confirmations.append((pkg, dest, tags[pkg]))
-
-    for _pkg, dest, _tag in confirmations:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        # (re-vendor replaces the tree below; no git bookkeeping needed)
+        if current != tags[pkg] and not confirm(f"re-vendor {pkg} from {current} to {tags[pkg]}"):
+            raise ProjectError(
+                f"{pkg!r} is vendored at {current!r}; refusing to move it to {tags[pkg]!r} without confirmation"
+            )
 
     # Resolve every tag BEFORE any write into vendor/: clone missing sources
     # into a temp dir, verify each tag, and only then move into place.
@@ -460,11 +459,17 @@ def vendor_packages(
             "vendored": "detached checkout of the release tag",
         }
         (dest / VENDOR_META).write_text(json.dumps(meta, indent=2) + "\n")
-        record_packages[pkg] = {
+        prior = record_packages.get(pkg, {})
+        changed_tag = prior.get("tag") != tags[pkg]
+        new_entry = {
             "vendor": f"{VENDOR_DIR}/{pkg}-server",
             "tag": tags[pkg],
-            "seeded": record_packages.get(pkg, {}).get("seeded", []),
+            "seeded": prior.get("seeded", []),
         }
+        if prior.get("deployed") and not changed_tag:
+            new_entry["deployed"] = prior["deployed"]  # same pin: the deploy signal stays true
+        # a tag change clears deployed: the new pin has not been deployed
+        record_packages[pkg] = new_entry
         wrote.append(pkg)
 
     record_path.write_text(json.dumps(record, indent=2) + "\n")

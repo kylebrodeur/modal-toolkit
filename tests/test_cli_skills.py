@@ -88,9 +88,11 @@ def _run_skills(monkeypatch, *extra):
 def test_lists_skills_for_vendored_packages_with_state(project, monkeypatch):
     rc, out = _run_skills(monkeypatch)
     assert rc == 0
+    # the suggestion LISTS build-deploy, and the deploy-gated one is reported
+    # as gated, not suggested: it appears only in the status line
     assert "mtk-vault-build-deploy" in out
-    # deployed-gated skill does NOT show: no deploy has happened yet
-    assert "mtk-vault-develop" not in out
+    assert out.count("mtk-vault-develop") == 1
+    assert "gated" in out
 
 
 def test_deployed_gate_follows_the_recorded_deploy_signal(project, monkeypatch):
@@ -110,9 +112,15 @@ def test_stage_filter(project, monkeypatch):
 
 
 def test_json_output(project, monkeypatch):
-    rc, out = _run_skills(monkeypatch, "--json")
+    args = cli.build_parser().parse_args(["skills", "--json"])
+    import contextlib
+    import io
+
+    buf, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+        rc = cli.cmd_skills(args)
     assert rc == 0
-    data = json.loads(out)
+    data = json.loads(buf.getvalue())  # only stdout: stderr carries status lines
     assert isinstance(data, list) and data
     assert data[0]["name"] == "mtk-vault-build-deploy"
 
@@ -133,3 +141,27 @@ def test_outside_a_project_refuses(tmp_path, monkeypatch):
     rc, out = _run_skills(monkeypatch)
     assert rc == 1
     assert "mtk init" in out
+
+
+def test_partially_configured_package_fails_the_configured_gate(project, monkeypatch):
+    """A section missing its token is NOT configured: the gate reads
+    cfg.validate's `ok`, not the presence of any keys."""
+    # vault's REQUIRED_KEYS = base_url + token: give only base_url
+    monkeypatch.setenv("MODAL_VAULT_BASE_URL", "https://vault.example.com")
+    (project / ".mtk" / "deployed.json")  # touch nothing; the gate is env-fed
+    rc, out = _run_skills(monkeypatch)
+    assert rc == 0
+    # init-config (applies any) shows; the project stays honest about the gate
+    assert "mtk-vault-build-deploy" in out
+
+
+def test_no_manifest_packages_get_an_honest_status_line(project, monkeypatch):
+    """A pinned release with no mtk-skills.toml yet says so per package:
+    the misleading 'vendor more packages' hint is replaced by the honest one."""
+    # strip the manifest from the vendored copy (simulates a release before manifests)
+    vendor = mtk_project.vendor_dir(project, "vault")
+    (vendor / "server" / "mtk-skills.toml").unlink()
+    rc, out = _run_skills(monkeypatch)
+    assert rc == 1
+    assert "declares no skills" in out
+    assert "vendor more packages" not in out

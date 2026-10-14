@@ -841,14 +841,14 @@ def cmd_seed(args: argparse.Namespace) -> int:
 
 
 def _pkg_configured(project_root: Path, pkg: str) -> bool:
-    """The configured link for a package: its config section has required keys.
+    """The configured link for a package: no missing FIELDS in its section.
 
-    Delegates to the config module's own validation so the skill filter agrees
-    with `mtk config` on what configured means.
+    Reads cfg.validate()'s per-package `ok` (the config module's own oracle),
+    so the skill filter cannot pass a partially filled section.
     """
     try:
         state = cfg.validate().get("packages", {}).get(pkg, {})
-        return bool(state.get("configured", False))
+        return bool(state.get("ok", False))
     except SystemExit:
         return False
 
@@ -875,9 +875,32 @@ def cmd_skills(args: argparse.Namespace) -> int:
     repos = [mtk_project.vendor_dir(project_root, pkg) for pkg in record_pkgs]
     rows: list[dict] = []
     problems: list[str] = []
-    for repo in repos:
-        _, probs = catalog.load_manifest_with_problems(repo)
+    manifests_seen = False
+    for pkg, repo in zip(record_pkgs, repos, strict=True):
+        skills, probs = catalog.load_manifest_with_problems(repo)
         problems.extend(probs)
+        if probs:
+            continue
+        if not skills:
+            print(
+                f"skills: {pkg} (vendored) declares no skills: this release has no "
+                f"server/mtk-skills.toml; manifests ship with the package's next release",
+                file=sys.stderr,
+            )
+        else:
+            manifests_seen = True
+            state = record_pkgs[pkg]
+            gated = [
+                s.name
+                for s in skills
+                if (s.applies == "deployed" and not state.get("deployed"))
+                or (s.applies == "configured" and not _pkg_configured(project_root, pkg))
+            ]
+            if gated:
+                print(
+                    f"skills: {pkg} has {len(gated)} skill(s) gated (e.g. {gated[0]}): vendor+deploy first",
+                    file=sys.stderr,
+                )
     for skill in catalog.suggest(
         repos,
         pkg_state={
@@ -912,6 +935,9 @@ def cmd_skills(args: argparse.Namespace) -> int:
             }
         )
 
+    if args.stage:
+        rows = [row for row in rows if row["stage"] == args.stage]
+
     if args.json:
         print(json.dumps(rows, indent=2))
         return 0 if rows else 1
@@ -919,10 +945,16 @@ def cmd_skills(args: argparse.Namespace) -> int:
     if problems:
         for problem in problems:
             print(f"skills: {problem}", file=sys.stderr)
-    if args.stage:
-        rows = [row for row in rows if row["stage"] == args.stage]
     if not rows:
-        print("no skills apply right now. Fix: vendor more packages or deploy first", file=sys.stderr)
+        if args.stage and manifests_seen:
+            print(f"no skills in stage {args.stage!r}. Fix: run mtk skills without --stage", file=sys.stderr)
+        elif manifests_seen:
+            print("no skills apply right now. Fix: deploy a gated package (mtk deploy <pkg>)", file=sys.stderr)
+        elif not any(repos) or all(
+            not (mtk_project.vendor_dir(project_root, pkg) / "server" / "mtk-skills.toml").is_file()
+            for pkg, repo in [(p, r) for p, r in zip(record_pkgs, repos, strict=False)]
+        ):
+            pass  # the per-package status lines above already explained it
         return 1
     by_stage: dict[str, list[dict]] = {}
     for row in rows:
@@ -974,11 +1006,13 @@ def cmd_deploy(args: argparse.Namespace) -> int:
     rc = subprocess.run(["sh", str(overlay / "deploy.sh")], cwd=overlay, check=False).returncode
     if rc == 0:
         # the deploy signal (source of the `deployed` lifecycle link)
-        record_path = project_root / ".mtk" / "config.json"
+        record_path = mtk_project.record_path_of(project_root)
         record = json.loads(record_path.read_text())
         entry = record.setdefault("packages", {}).setdefault(args.pkg, {})
         entry["deployed"] = {"at": datetime.now().isoformat(timespec="seconds")}
-        entry["tag"] = mtk_project.vendor_meta_tag(project_root, args.pkg)
+        meta_tag = mtk_project.vendor_meta_tag(project_root, args.pkg)
+        if meta_tag:
+            entry["tag"] = meta_tag
         if findings_note:  # an overridden drift deploy records the override too
             overrides = entry.setdefault("overrides", [])
             overrides.append({"findings": findings_note, "at": entry["deployed"]["at"]})

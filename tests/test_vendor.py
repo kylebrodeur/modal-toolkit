@@ -129,3 +129,35 @@ def test_vendored_copy_is_recorded_in_the_project(project: Path, upstream: Path)
 def test_vendored_packages_needs_provenance_per_package(project: Path, upstream: Path) -> None:
     with pytest.raises(mtk_project.ProjectError, match="provenance"):
         mtk_project.vendor_packages(project, ["inference"], tags={})
+
+
+def test_revendor_preserves_seeded_and_clears_deployed_on_a_tag_change(project: Path, upstream: Path) -> None:
+    """A record entry merges, not replaces: seeded history keeps; the deployed
+    signal keeps only when the tag is unchanged (a new pin hasn't deployed)."""
+    record_path = project / ".mtk" / "config.json"
+    mtk_project.vendor_packages(project, ["inference"], tags={"inference": "v1.0.0"}, url_for=lambda _p: str(upstream))
+    record = json.loads(record_path.read_text())
+    record["packages"]["inference"]["deployed"] = {"at": "2026-10-14T00:00:00"}
+    record["packages"]["inference"]["seeded"] = ["alpha:a"]
+    record_path.write_text(json.dumps(record, indent=2) + "\n")
+
+    # same-tag re-run: deployed stays
+    mtk_project.vendor_packages(project, ["inference"], tags={"inference": "v1.0.0"}, url_for=lambda _p: str(upstream))
+    record = json.loads(record_path.read_text())
+    entry = record["packages"]["inference"]
+    assert entry["deployed"] == {"at": "2026-10-14T00:00:00"}
+    assert entry["seeded"] == ["alpha:a"]
+
+    # tag change (confirmed): deployed clears, seeded keeps
+    mtk_project.vendor_packages(
+        project,
+        ["inference"],
+        tags={"inference": "v1.1.0"},
+        url_for=lambda _p: str(upstream),
+        confirm=lambda _q: True,
+    )
+    record = json.loads(record_path.read_text())
+    entry = record["packages"]["inference"]
+    assert entry["tag"] == "v1.1.0"
+    assert "deployed" not in entry
+    assert entry["seeded"] == ["alpha:a"]
