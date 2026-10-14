@@ -53,6 +53,7 @@ from toolkit import pkg_commands
 from toolkit import project as mtk_project
 from toolkit import secrets as mtk_secrets
 from toolkit import seed as mtk_seed
+from toolkit import skills_catalog as catalog
 from toolkit.secrets import ManifestSecret, ManifestSpec
 
 TIMEOUT_S = 20  # warm-path probe budget (a hot lane answers in milliseconds)
@@ -839,6 +840,102 @@ def cmd_seed(args: argparse.Namespace) -> int:
     return 0
 
 
+def _pkg_configured(project_root: Path, pkg: str) -> bool:
+    """The configured link for a package: its config section has required keys.
+
+    Delegates to the config module's own validation so the skill filter agrees
+    with `mtk config` on what configured means.
+    """
+    try:
+        state = cfg.validate().get("packages", {}).get(pkg, {})
+        return bool(state.get("configured", False))
+    except SystemExit:
+        return False
+
+
+def cmd_skills(args: argparse.Namespace) -> int:
+    """`mtk skills`: the lifecycle skills this project can use right now.
+
+    Reads server/mtk-skills.toml from every vendored package plus the
+    toolkit's own skills, filters by project state, and prints them grouped
+    by stage. Honest empty answer (rc 1) when nothing applies.
+    """
+
+    project_root = Path.cwd()
+    record_path = project_root / ".mtk" / "config.json"
+    if not record_path.is_file():
+        print("not a project. Fix: run `mtk init` here first (or run from a project dir)", file=sys.stderr)
+        return 1
+    record = json.loads(record_path.read_text())
+    record_pkgs = record.get("packages", {})
+    if not record_pkgs:
+        print("no packages vendored yet. Fix: mtk pull <pkg> --tag <release>", file=sys.stderr)
+        return 1
+
+    repos = [mtk_project.vendor_dir(project_root, pkg) for pkg in record_pkgs]
+    rows: list[dict] = []
+    problems: list[str] = []
+    for repo in repos:
+        _, probs = catalog.load_manifest_with_problems(repo)
+        problems.extend(probs)
+    for skill in catalog.suggest(
+        repos,
+        pkg_state={
+            pkg: {
+                "configured": _pkg_configured(project_root, pkg),
+                "deployed": bool(state.get("deployed")),
+            }
+            for pkg, state in record_pkgs.items()
+        },
+        pkgs_pulled=set(record_pkgs),
+    ):
+        sdir = repo_path = ""
+        for repo in repos:
+            candidate = repo / skill.path
+            if (candidate / "SKILL.md").is_file():
+                repo_path = str(candidate)
+                break
+        if not repo_path:
+            problems.append(f"{skill.name}: no SKILL.md at {skill.path} in the vendored copy")
+            continue
+        sdir = repo_path
+        rows.append(
+            {
+                "name": skill.name,
+                "pkg": skill.pkg,
+                "stage": skill.stage,
+                "when": skill.when,
+                "applies": skill.applies,
+                "summary": skill.summary,
+                "path": sdir,
+            }
+        )
+
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0 if rows else 1
+
+    if problems:
+        for problem in problems:
+            print(f"skills: {problem}", file=sys.stderr)
+    if args.stage:
+        rows = [row for row in rows if row["stage"] == args.stage]
+    if not rows:
+        print("no skills apply right now. Fix: vendor more packages or deploy first", file=sys.stderr)
+        return 1
+    by_stage: dict[str, list[dict]] = {}
+    for row in rows:
+        by_stage.setdefault(row["stage"], []).append(row)
+    for stage in catalog.STAGES:
+        stage_rows = by_stage.get(stage, [])
+        if not stage_rows:
+            continue
+        print(f"## {stage}")
+        for row in stage_rows:
+            print(f"  {row['name']:40s} {row['summary']}  (load: {row['path']})")
+    return 0
+
+
 def cmd_deploy(args: argparse.Namespace) -> int:
     """`mtk deploy <pkg>`: preflight the overlay, gate on secrets, then run its deploy.sh.
 
@@ -917,6 +1014,13 @@ def build_parser() -> argparse.ArgumentParser:
     seed_p.add_argument("pkg", help="package name, e.g. inference")
     seed_p.add_argument("--force", action="store_true", help="re-run every seed unit, ignoring recorded completions")
     seed_p.set_defaults(func=cmd_seed)
+
+    skills_p = sub.add_parser(
+        "skills", help="the lifecycle skills this project can use right now (from the vendored repos)"
+    )
+    skills_p.add_argument("--stage", help="filter to one stage: init-config, setup-hooks, build-deploy, or develop")
+    skills_p.add_argument("--json", action="store_true", help="emit the skill list as JSON")
+    skills_p.set_defaults(func=cmd_skills)
 
     setup = sub.add_parser("setup", help="write the shared config (per-package sections)")
     setup.add_argument(
