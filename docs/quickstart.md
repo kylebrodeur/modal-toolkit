@@ -102,6 +102,7 @@ mtk shutdown --pkg <p>  # scale a worker to zero (vision's stop path is an undep
 | `setup`, `config`, `status` | Write, validate, and summarize the shared config |
 | `init [<id>]` | Scaffold a project; checks prerequisites and the account (read-only) |
 | `pull <pkg> --tag <release>` | Vendor a tag-pinned copy into vendor/<pkg>-server/ |
+| `seed <pkg>` | Stage pre-deploy artifacts (model weights) from the overlay's seed.json |
 | `deploy <pkg>` | Preflight the overlay, gate secrets, run the overlay's `deploy.sh` |
 | `secrets check \| create \| rotate` | Manifest vs workspace; create or rotate secrets |
 | `libs sync \| check` | Vendor and parity-check the shared libraries |
