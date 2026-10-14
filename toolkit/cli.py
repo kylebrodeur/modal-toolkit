@@ -794,8 +794,11 @@ def cmd_pull(args: argparse.Namespace) -> int:
     mtk_project.check_prerequisites()
     mtk_project.vendor_packages(project_root, [args.pkg], tags={args.pkg: args.tag}, confirm=_confirm_revendor)
     if (project_root / "llms.txt").exists():
+        # regenerate from the FULL record package list: a second pull must
+        # never erase earlier packages from the managed block
         record = json.loads((project_root / ".mtk" / "config.json").read_text())
-        mtk_project.install_agent_files(project_root, record["slug"], [args.pkg])
+        all_pkgs = list(record.get("packages", {}))
+        mtk_project.install_agent_files(project_root, record["slug"], all_pkgs)
     print(f"pulled {args.pkg}: {mtk_project.vendor_dir(project_root, args.pkg)} at {args.tag}")
     return 0
 
@@ -824,7 +827,13 @@ def cmd_seed(args: argparse.Namespace) -> int:
     def _shell(call: tuple) -> int:
         argv, cwd, env = call
         merged = {**os.environ, **env}
-        return subprocess.run(argv, cwd=str(cwd), env=merged, check=True).returncode
+        # parity with the real deploys: modal runs inside the vendored repo via uv
+        argv = ["uv", "run", "--project", str(Path(cwd).parent), *argv]
+        try:
+            return subprocess.run(argv, cwd=str(cwd), env=merged, check=False).returncode
+        except FileNotFoundError as e:
+            print(f"seed failed to launch: {e}", file=sys.stderr)
+            return 127
 
     mtk_seed.run(project_root, args.pkg, force=args.force, runner=_shell)
     return 0
@@ -848,15 +857,12 @@ def cmd_deploy(args: argparse.Namespace) -> int:
             + f"\n  Fix deploys/{args.pkg}-server/ or re-vendor, or pass --allow-local-changes to deploy anyway"
         )
     if not ok and args.allow_local_changes:
-        record_path = project_root / ".mtk" / "config.json"
-        record = json.loads(record_path.read_text())
-        entry = record.setdefault("packages", {}).setdefault(args.pkg, {})
-        overrides = entry.setdefault("overrides", [])
-        overrides.append({"files": findings, "at": datetime.now().isoformat(timespec="seconds")})
-        record_path.write_text(json.dumps(record, indent=2) + "\n")
-        print(f"WARNING: deploying {args.pkg!r} with local vendor changes (recorded):")
-        for f in findings:
+        findings_note = list(findings)
+        print(f"WARNING: deploying {args.pkg!r} with local vendor changes (will be recorded on success):")
+        for f in findings_note:
             print(f"  {f}")
+    else:
+        findings_note = []
 
     status = mtk_secrets.check_all([args.pkg]).get(args.pkg)
     missing = mtk_project.missing_secrets(status, args.pkg)
@@ -867,7 +873,16 @@ def cmd_deploy(args: argparse.Namespace) -> int:
             raise mtk_project.ProjectError(f"creating secrets for {args.pkg!r} failed (see output above)")
 
     mtk_project.ensure_secrets(missing, confirm=_confirm_secret, create_all=_create)
-    return subprocess.run(["sh", str(overlay / "deploy.sh")], cwd=overlay, check=False).returncode
+    rc = subprocess.run(["sh", str(overlay / "deploy.sh")], cwd=overlay, check=False).returncode
+    if rc == 0 and findings_note:
+        record_path = project_root / ".mtk" / "config.json"
+        record = json.loads(record_path.read_text())
+        entry = record.setdefault("packages", {}).setdefault(args.pkg, {})
+        overrides = entry.setdefault("overrides", [])
+        overrides.append({"findings": findings_note, "at": datetime.now().isoformat(timespec="seconds")})
+        record_path.write_text(json.dumps(record, indent=2) + "\n")
+        print(f"recorded the --allow-local-changes override for {args.pkg!r}")
+    return rc
 
 
 def build_parser() -> argparse.ArgumentParser:

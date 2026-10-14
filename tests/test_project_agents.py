@@ -63,3 +63,18 @@ class TestIdempotence:
         project.install_agent_files(tmp_path, slug="writing-lab", packages=["vault"])
         second = {n: (tmp_path / n).read_bytes() for n in ("AGENTS.md", "llms.txt")}
         assert first == second
+
+
+def test_regenerating_with_a_later_pull_keeps_earlier_packages(tmp_path):
+    """cmd_pull passes the FULL record package list: a second pull appends, never erases."""
+    import json
+
+    (tmp_path / ".mtk").mkdir()
+    (tmp_path / ".mtk" / "config.json").write_text(json.dumps({"slug": "lab", "packages": {}}) + "\n")
+    project.install_agent_files(tmp_path, "lab", ["vault"])
+    # simulate a second package pulled later, record now holds both
+    record = {"slug": "lab", "packages": {"vault": {"tag": "v1.0.0"}, "inference": {"tag": "v1.0.0"}}}
+    (tmp_path / ".mtk" / "config.json").write_text(json.dumps(record) + "\n")
+    project.install_agent_files(tmp_path, record["slug"], list(record["packages"]))
+    text = (tmp_path / "AGENTS.md").read_text()
+    assert "mtk deploy vault" in text and "mtk deploy inference" in text

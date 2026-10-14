@@ -101,7 +101,14 @@ def run(
                 print(f"seeded already: {key}")
                 continue
             argv = ["modal", "run", "modal_service.py::bootstrap_model", "--alias", alias]
-            runner((argv, vendor_server, env))
+            rc = runner((argv, vendor_server, env))
+            if rc != 0:
+                # persist what DID complete before failing: later retries skip those
+                record_path.write_text(json.dumps(record, indent=2) + "\n")
+                raise ProjectError(
+                    f"seeding {key!r} failed (rc={rc}); completed aliases are recorded. "
+                    "Fix the upstream command, then re-run `mtk seed`"
+                )
             if key not in done:
                 done.append(key)
 

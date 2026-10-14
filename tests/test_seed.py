@@ -70,8 +70,9 @@ def test_seed_runs_the_upstream_command_once_per_alias_in_order(project: Path) -
     (overlay / "seed.json").write_text(json.dumps(SEED) + "\n")
     seen: list[tuple] = []
 
-    def runner(call: tuple) -> None:
+    def runner(call: tuple) -> int:
         seen.append(call)
+        return 0
 
     mtk_seed.run(project, "inference", runner=runner)
     assert [c[0] for c in seen] == [
@@ -124,8 +125,9 @@ def test_already_seeded_units_are_skipped_and_completion_is_recorded(project: Pa
     (overlay / "seed.json").write_text(json.dumps(SEED) + "\n")
     seen: list[tuple] = []
 
-    def runner(call: tuple) -> None:
+    def runner(call: tuple) -> int:
         seen.append(call)
+        return 0
 
     mtk_seed.run(project, "inference", runner=runner)
     assert len(seen) == 2
@@ -141,13 +143,31 @@ def test_force_reseeds_everything(project: Path) -> None:
     (overlay / "seed.json").write_text(json.dumps(SEED) + "\n")
     seen: list[tuple] = []
 
-    def runner(call: tuple) -> None:
+    def runner(call: tuple) -> int:
         seen.append(call)
+        return 0
 
     mtk_seed.run(project, "inference", runner=runner)
     first = len(seen)
     mtk_seed.run(project, "inference", runner=runner, force=True)
     assert len(seen) == 2 * first
+
+
+def test_a_failed_alias_stops_and_records_what_completed(project: Path):
+    overlay = project / "deploys" / "inference-server"
+    (overlay / "seed.json").write_text(json.dumps(SEED) + "\n")
+    seen: list[tuple] = []
+
+    def runner(call: tuple) -> int:
+        seen.append(call)
+        return 1  # first alias fails
+
+    with pytest.raises(mtk_project.ProjectError, match="failed"):
+        mtk_seed.run(project, "inference", runner=runner)
+    assert len(seen) >= 1
+    record = json.loads((project / ".mtk" / "config.json").read_text())
+    # nothing recorded: the failure happened before any completion
+    assert not record["packages"]["inference"].get("seeded")
 
 
 def test_a_unit_needs_a_profile(project: Path) -> None:

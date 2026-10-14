@@ -177,7 +177,9 @@ def _default_git(argv: list[str]) -> tuple[int, str]:
         result = subprocess.run(argv, capture_output=True, text=True, check=False, timeout=600)
     except FileNotFoundError:
         return 127, "git not found"
-    return result.returncode, (result.stdout + result.stderr).strip()
+    return result.returncode, (result.stdout + result.stderr).rstrip("\n")
+    # rstrip, not strip: porcelain's leading status column (e.g. " M README.md")
+    # must survive; a whole-blob strip() eats it and broke filename extraction.
 
 
 def _project_slug(project_root: Path) -> str:
@@ -302,8 +304,10 @@ def llms_txt(slug: str, packages: list[str]) -> str:
 def install_agent_files(root: Path, slug: str, packages: list[str]) -> None:
     """Write AGENTS.md (create, or refresh only the managed block) and llms.txt.
 
-    A user's AGENTS.md is never overwritten. Text outside the markers is kept
-    byte for byte. Running this twice leaves the files unchanged.
+    `packages` is the FULL current package list (callers read it from the
+    record), not just the ones a command just touched, so a second pull never
+    erases earlier packages from the managed block. A user's AGENTS.md is
+    never overwritten. Text outside the markers is kept byte for byte.
     """
     block = agents_block(slug, packages)
     agents_path = root / "AGENTS.md"
@@ -394,9 +398,8 @@ def vendor_packages(
             confirmations.append((pkg, dest, tags[pkg]))
 
     for _pkg, dest, _tag in confirmations:
-        # Re-vendor = clean replace, so the new pin is the only copy.
-        git(["git", "-C", str(dest.parent), "rm", "-r", "-q", "-f", dest.name])
         dest.parent.mkdir(parents=True, exist_ok=True)
+        # (re-vendor replaces the tree below; no git bookkeeping needed)
 
     # Resolve every tag BEFORE any write into vendor/: clone missing sources
     # into a temp dir, verify each tag, and only then move into place.
@@ -432,6 +435,7 @@ def vendor_packages(
                 shutil.rmtree(dest)
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(staged_repo), str(dest))
+            shutil.rmtree(staged_repo.parent, ignore_errors=True)  # the mkdtemp wrapper
         head = _tag_head(git, dest, tags[pkg])
         if head is None:
             raise ProjectError(f"tag {tags[pkg]!r} went missing for {pkg!r} before checkout")
