@@ -739,6 +739,16 @@ def _mount_package_commands(sub: argparse._SubParsersAction) -> None:
 # ── Parser ──────────────────────────────────────────────────────────────────
 
 
+def _want_agent_files(args: argparse.Namespace) -> bool:
+    """Explicit --agents/--no-agents wins. Interactive runs ask (default yes). Scripts default to no."""
+    if args.agents is not None:
+        return bool(args.agents)
+    if not sys.stdin.isatty():
+        return False
+    answer = input("Add AGENTS.md and llms.txt to this project? [Y/n] ").strip().lower()
+    return answer not in ("n", "no")
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     """`mtk init [<project-id>]`: scaffold a project record. Read-only against Modal.
 
@@ -750,6 +760,9 @@ def cmd_init(args: argparse.Namespace) -> int:
     apps = mtk_project.check_prerequisites()
     mtk_project.check_collisions(slug, apps)
     root = mtk_project.init_project(base, args.project_id)
+    if _want_agent_files(args):
+        mtk_project.install_agent_files(root, slug, [])
+        print("  added AGENTS.md and llms.txt (refresh with each `mtk pull`)")
     print(f"initialized project {slug!r} at {root}")
     print(f"  record: {root / '.mtk' / 'config.json'}")
     print("  next: mtk pull <pkg> ...  then  mtk deploy <pkg>")
@@ -761,6 +774,9 @@ def cmd_pull(args: argparse.Namespace) -> int:
     project_root = Path.cwd()
     repos_root = cfg.repos_root()
     mtk_project.pull_packages(project_root, repos_root, list(args.packages))
+    if (project_root / "llms.txt").exists():
+        record = json.loads((project_root / ".mtk" / "config.json").read_text())
+        mtk_project.install_agent_files(project_root, record["slug"], list(record["packages"]))
     for pkg in args.packages:
         print(f"pulled {pkg}: {repos_root / mtk_project.REPO_NAMES[pkg]}")
     return 0
@@ -802,6 +818,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
     init_p = sub.add_parser("init", help="scaffold a project (read-only check of prerequisites and account)")
     init_p.add_argument("project_id", nargs="?", help="project id; omit to use the current directory")
+    init_p.add_argument("--agents", dest="agents", action="store_true", default=None, help="add AGENTS.md and llms.txt")
+    init_p.add_argument("--no-agents", dest="agents", action="store_false", help="skip AGENTS.md and llms.txt")
+    init_p.set_defaults(func=cmd_init)
     pull_p = sub.add_parser("pull", help="clone package repos into the repos root and record them in this project")
     pull_p.add_argument("packages", nargs="+", help="package names, e.g. vault embedding")
     pull_p.set_defaults(func=cmd_pull)

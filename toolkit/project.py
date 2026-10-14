@@ -250,3 +250,66 @@ def ensure_secrets(
         if not confirm(name):
             raise ProjectError(f"secret {name!r} is missing and was not confirmed; nothing was created")
     create_all(list(missing))
+
+
+BLOCK_BEGIN = "<!-- mtk:begin -->"
+BLOCK_END = "<!-- mtk:end -->"
+
+
+def agents_block(slug: str, packages: list[str]) -> str:
+    """The mtk-managed section for AGENTS.md. Only this block is ever rewritten."""
+    pkgs = ", ".join(packages) if packages else "none yet"
+    lines = [
+        BLOCK_BEGIN,
+        "## Modal Toolkit (mtk)",
+        "",
+        f"This project (`{slug}`) deploys with `mtk`. Packages: {pkgs}.",
+        "",
+        "- Check state: `mtk doctor`. Pull a package: `mtk pull <pkg>`.",
+        *[f"- Deploy {p}: `mtk deploy {p}`" for p in packages],
+        "- Deploy only through the overlays in `deploys/<pkg>/`. Never run `modal deploy` inside a package checkout.",
+        "- Secrets are confirmed before any is created. Never write secret values into this repo.",
+        BLOCK_END,
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def llms_txt(slug: str, packages: list[str]) -> str:
+    """llms.txt in the llmstxt.org layout: H1, blockquote summary, link sections."""
+    out = [
+        f"# {slug}",
+        "",
+        "> A Modal Toolkit project. Packages deploy with `mtk` from overlays in `deploys/`.",
+        "",
+        "## Packages",
+        "",
+    ]
+    for pkg in packages:
+        url = repo_url(pkg) or ""
+        out.append(f"- [{pkg}]({url}): the {pkg} package repo" if url else f"- {pkg}")
+    out += ["", "## Toolkit", "", "- [mtk toolkit](https://github.com/kylebrodeur/modal-toolkit): the operator CLI", ""]
+    return "\n".join(out)
+
+
+def install_agent_files(root: Path, slug: str, packages: list[str]) -> None:
+    """Write AGENTS.md (create, or refresh only the managed block) and llms.txt.
+
+    A user's AGENTS.md is never overwritten. Text outside the markers is kept
+    byte for byte. Running this twice leaves the files unchanged.
+    """
+    block = agents_block(slug, packages)
+    agents_path = root / "AGENTS.md"
+    if not agents_path.exists():
+        agents_path.write_text(block)
+    else:
+        text = agents_path.read_text()
+        if BLOCK_BEGIN in text and BLOCK_END in text:
+            begin = text.index(BLOCK_BEGIN)
+            end = text.index(BLOCK_END, begin) + len(BLOCK_END)
+            new = text[:begin] + block.rstrip("\n") + text[end:]
+        else:
+            sep = "\n" if text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+            new = text + sep + block
+        if new != text:
+            agents_path.write_text(new)
+    (root / "llms.txt").write_text(llms_txt(slug, packages))
