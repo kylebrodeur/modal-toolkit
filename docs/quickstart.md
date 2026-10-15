@@ -108,5 +108,5 @@ mtk shutdown --pkg <p>  # scale a worker to zero (vision's stop path is an undep
 | `libs sync \| check` | Vendor and parity-check the shared libraries |
 | `doctor`, `warm`, `shutdown`, `cost`, `flow`, `metrics` | Health, warm, stop, cost, map, telemetry |
 | `dashboard deploy \| stop \| logs \| url` | The fleet dashboard app |
-| `embedding`, `vision`, `inference`, `finetune`, `vault` | Per-package passthrough groups |
+| `embedding`, `vision`, `inference`, `finetune`, `vault`, `vm` | Per-package passthrough groups |
 
