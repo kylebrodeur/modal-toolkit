@@ -1,6 +1,6 @@
 """App-level metrics: a stdlib-only VictoriaMetrics drop-in for the toolkit.
 
-One writer usable from any of the four packages, or from an operator's own
+One writer usable from any family package, or from an operator's own
 Modal app, to push events, counters, and rates into **your own** VictoriaMetrics
 (or InfluxDB; the line protocol is compatible with both).
 

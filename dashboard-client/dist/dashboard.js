@@ -24,7 +24,7 @@
       <div class="meta apps">${r?k`<div class="meta">${r}</div>`:k`<p class="mini">No metered rows this month.</p>`}</div>
     </section>
   `};var bt=document.querySelector("#app");if(!bt)throw new Error("Missing #app root");var Te=W({pill:"loading",cls:"warn"}),nn=()=>k`<div class="toolbar">
-      <div><h1>Modal Toolkit</h1><div class="subtle">Fleet state across the four packages</div></div>
+      <div><h1>Modal Toolkit</h1><div class="subtle">Fleet state across the packages</div></div>
       <div><span class="pill ${Te.cls}">${Te.pill}</span> <button id="refresh">Refresh</button></div>
     </div>
     ${wt()}

@@ -56,8 +56,9 @@ offers just the fleet-level commands.
 
 ## The fleet dashboard
 
-One CPU-only Modal app (`mtk dashboard deploy`) that shows the four GPU
-packages (embedding, inference, vision, finetune) as cards, one adapter
+One CPU-only Modal app (`mtk dashboard deploy`) that shows the GPU
+packages (embedding, inference, vision, finetune) plus the metrics store
+(vm) as cards, one adapter
 each. Each adapter answers two questions: an unauthenticated
 health probe for the state pill and one authenticated read for the
 headline. The probes differ per card, matching what each server

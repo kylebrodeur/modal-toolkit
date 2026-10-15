@@ -12,7 +12,7 @@ const status = reactive({ pill: "loading", cls: "warn" });
 
 const View = () =>
   html`<div class="toolbar">
-      <div><h1>Modal Toolkit</h1><div class="subtle">Fleet state across the four packages</div></div>
+      <div><h1>Modal Toolkit</h1><div class="subtle">Fleet state across the packages</div></div>
       <div><span class="pill ${status.cls}">${status.pill}</span> <button id="refresh">Refresh</button></div>
     </div>
     ${PackageGrid()}

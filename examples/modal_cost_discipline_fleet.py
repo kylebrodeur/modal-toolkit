@@ -76,7 +76,7 @@ def main():
     print("  2. cost:        attributes always-on burn vs session GPU-seconds")
     print("  3. shutdown:    one escape hatch; idempotent")
     print()
-    print("The production CLI with these commands across four packages:")
+    print("The production CLI with these commands across the family packages:")
     print("  github.com/kylebrodeur/modal-toolkit")
 
 

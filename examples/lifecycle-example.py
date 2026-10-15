@@ -1,7 +1,7 @@
 """Example: the full operator lifecycle with mtk.
 
 This is the toolkit's "flight path": setup, doctor, warm, use, shutdown -
-across all four packages, all from one CLI.
+across the family packages, all from one CLI.
 """
 
 # 1. Setup: write the shared config

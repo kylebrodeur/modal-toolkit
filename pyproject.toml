@@ -1,7 +1,7 @@
 [project]
 name = "modal-toolkit"
 version = "1.10.6"
-description = "One operator CLI for the full Modal Toolkit lifecycle: deploy, warm, doctor, shutdown, cost, and flows across all four packages"
+description = "One operator CLI for the full Modal Toolkit lifecycle: deploy, warm, doctor, shutdown, cost, and flows across the family packages"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "httpx>=0.27,<1",

@@ -1,6 +1,6 @@
 """mtk: the one operator CLI for the Modal Toolkit.
 
-Full lifecycle across all four packages (embedding, inference, vision, finetune):
+Full lifecycle across the family packages (embedding, inference, vision, finetune, vault, vm):
 
     mtk setup                            # one-time: write ~/.config/modal-toolkit/config.json
     mtk config                           # inspect + validate the config
@@ -262,7 +262,7 @@ def _commands_summary(pkg: str) -> dict[str, Any]:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """Health + drift report for all four packages (or --pkg subset)."""
+    """Health + drift report for all packages (or --pkg subset)."""
     wanted = args.pkg.split(",") if args.pkg else PACKAGE_ORDER
     out: dict[str, Any] = {}
     for pkg in wanted:
@@ -1079,7 +1079,7 @@ def build_parser() -> argparse.ArgumentParser:
     status_p.add_argument("--no-net", dest="net", action="store_false", help="config-only glance (no network)")
     status_p.set_defaults(func=cmd_status)
 
-    doctor = sub.add_parser("doctor", help="health + drift across all four packages")
+    doctor = sub.add_parser("doctor", help="health + drift across all packages")
     doctor.add_argument("--pkg", help="comma-separated package names (default: all)")
     doctor.add_argument("--json", action="store_true", help="emit JSON")
     doctor.set_defaults(func=cmd_doctor)
