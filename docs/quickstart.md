@@ -95,6 +95,10 @@ mtk cost                # always-on GPU-hour view
 mtk shutdown --pkg <p>  # scale a worker to zero (vision's stop path is an undeploy and asks you to confirm)
 ```
 
+Cross-server plumbing (pushing app metrics into the
+modal-victoriametrics-server store, the fleet dashboard's card grid) is
+operational detail: see [RUNBOOK.md](RUNBOOK.md).
+
 ## Command reference
 
 | Command | What it does |

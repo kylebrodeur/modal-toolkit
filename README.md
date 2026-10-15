@@ -6,6 +6,11 @@ One operator CLI for the **Modal Toolkit**: standalone GPU/research packages tha
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-pink.svg)](https://github.com/sponsors/kylebrodeur)
 
+## Docs
+
+- [Quickstart](docs/quickstart.md): the project flow (init, pull, deploy) with the overlay file format.
+- [Runbook](docs/RUNBOOK.md): the fleet-level operator surface (doctor, warm, shutdown, cost, the vault lane, troubleshooting).
+
 ## The packages
 
 This CLI orchestrates the packages; each is its own standalone repo and can be used without the toolkit:
@@ -17,6 +22,7 @@ This CLI orchestrates the packages; each is its own standalone repo and can be u
 - **[modal-finetune-server](https://github.com/kylebrodeur/modal-finetune-server):** Profile-driven LoRA fine-tune and GGUF pipeline with an honest eval gate.
 - **[modal-victoriametrics-server](https://github.com/kylebrodeur/modal-victoriametrics-server):** The metrics store: single-node VictoriaMetrics on Modal, CPU-only, scale-to-zero, Basic-Auth-gated. Every endpoint is protected; the `mtk metrics` writer's drop-in target.
 - **[modal-toolkit](https://github.com/kylebrodeur/modal-toolkit):** One operator CLI (`mtk`) that runs the fleet: `doctor`, `secrets`, `warm --all`, `shutdown --all`, `cost`, `flow`, `dashboard`.
+- **[modal-shared-libs](https://github.com/kylebrodeur/modal-shared-libs):** the family's shared library home: the lifecycle hooks seam (`libs/hooks.py`) vendored verbatim into every package, refreshed by `mtk libs sync`.
 - **[embed-eval-on-your-vault](https://github.com/kylebrodeur/embed-eval-on-your-vault):** the eval-first pattern (benchmark embedding models on your own data before you deploy) as a single-file, zero-dependency harness.
 
 ## What `mtk` adds
@@ -133,7 +139,10 @@ mtk doctor                         # health across the fleet
 
 The full walkthrough, including the overlay file format, is in
 [docs/quickstart.md](docs/quickstart.md). Each server has its own quickstart and
-how-to, linked from the packages list above.
+how-to, linked from the packages list above, and the metrics store too:
+[modal-victoriametrics-server quickstart](https://github.com/kylebrodeur/modal-victoriametrics-server/blob/main/docs/quickstart.md)
+and
+[how-to](https://github.com/kylebrodeur/modal-victoriametrics-server/blob/main/docs/how-to.md).
 
 ## Configuration
 

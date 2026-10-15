@@ -135,6 +135,32 @@ Name points `<package>_<event>`: `embedding_job_done`, `vision_gate_skip`,
 URL + its source) and `mtk metrics test` (writes one `mtk_metrics_probe` point;
 exit 1 with a clear message when no VM answers).
 
+### Pointing the writer at the family's metrics store
+
+When the target is the family's modal-victoriametrics-server (CPU-only,
+scale-to-zero, Basic-Auth-gated), the writer needs the second env var:
+`MODAL_TOOLKIT_VM_AUTH` (`user:password`, the `victoriametrics-auth` pair).
+The writer reads ONLY env, never the config file: `mtk status` can read
+`vm.base_url` from the toolkit config while the writer still aims at
+localhost until both env vars are exported.
+
+```bash
+export MODAL_TOOLKIT_VM_URL="https://<workspace>--<vm-app>-serve.modal.run"
+export MODAL_TOOLKIT_VM_AUTH="user:password"
+mtk metrics test   # ok = the write landed
+curl -u "$MODAL_TOOLKIT_VM_AUTH" \
+  "$MODAL_TOOLKIT_VM_URL/api/v1/query?query=mtk_metrics_probe_value"
+```
+
+Points land under `<measurement>_value` (VictoriaMetrics' Influx import
+appends the field key), so query the `_value` name. The per-package vendored
+writers (`MODAL_EMBED_VM_URL` with `MODAL_EMBED_METRICS=1`, and the same
+shape for inference, vision, finetune) predate the writer's Basic-auth
+support: aimed at the gated store they produce a silent 401 per point.
+Aim them at an unauthenticated target, or emit from the toolkit-side writer.
+`mtk flow --push` writes one `mtk_flow_state` point per package into the
+same store (same env vars, same no-retry contract).
+
 ## 6. The vault lane
 
 `mtk vault status` (or `sync`, `pull-only`, `sync-on-write`,
@@ -145,6 +171,16 @@ that container under `/vault` (Volume-backed): nothing ever syncs
 locally, the picker targets only `modal-vault-server` containers, and
 each command requires the vault section's `base_url` in the toolkit config
 (which wakes the scale-to-zero app).
+
+One cross-server seam rides on the vault app itself: set
+`MODAL_VAULT_EMBEDDING_URL` (plus optional `MODAL_VAULT_EMBEDDING_TOKEN`,
+the bearer for the authed `/stats` read) as keys on the vault's
+`modal-vault-secret` Secret and the `vault.status` MCP tool's semantic
+section flips from "configured: false" to a live probe of
+modal-embedding-server (health + collections count). That is the live
+surface today: the status probe. Semantic search over the vault's clone is
+still open upstream work; unreachable embedding is reported in the section,
+never raised.
 
 ## 7. Shared modules + extension seams
 
