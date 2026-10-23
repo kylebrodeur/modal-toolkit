@@ -15,7 +15,7 @@ and deploys each package from the project's own overlay. Install with
 mtk setup --repos-root ~/repos   # once: shared config, token at the prompt
 mtk init my-project              # scaffold; checks prerequisites and the account
 cd my-project
-mtk pull vault --tag v1.2.2       # vendor a tag-pinned copy into vendor/vault-server/
+mtk pull vault --tag v1.5.4       # vendor a tag-pinned copy into vendor/vault-server/
 mtk deploy vault                 # preflight overlay, confirm secrets, run deploy.sh
 mtk doctor --pkg vault           # health and drift
 ```

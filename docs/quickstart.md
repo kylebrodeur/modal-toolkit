@@ -63,7 +63,7 @@ existing app.
 ## 4. Vendor the packages you use
 
 ```bash
-mtk pull vault --tag v1.2.2
+mtk pull vault --tag v1.5.4
 ```
 
 Each vendored package lands in `vendor/<pkg>-server/`: a git checkout pinned to

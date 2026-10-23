@@ -46,7 +46,7 @@ automatically.
 ```bash
 mtk init <project-id>              # scaffold; read-only against Modal
 cd <project-id>
-mtk pull vault --tag v1.5.0        # vendor a release-tag-pinned copy
+mtk pull vault --tag v1.5.4        # vendor a release-tag-pinned copy
 mtk seed inference                 # stage weights declared by deploys/<pkg>-server/seed.json
 mtk deploy vault                   # preflight + drift check + secrets gate + deploy.sh
 mtk skills                         # the lifecycle skills this project can use

@@ -136,7 +136,7 @@ wheels = [
 
 [[package]]
 name = "modal-toolkit"
-version = "1.10.15"
+version = "1.10.16"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
